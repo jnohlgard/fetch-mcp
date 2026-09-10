@@ -1,10 +1,37 @@
 export class YouTubeTranscript {
   static extractPlayerResponse(html: string): unknown {
-    const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});/s);
-    if (!match) {
-      throw new Error("Could not find ytInitialPlayerResponse in page HTML");
+    const marker = /ytInitialPlayerResponse\s*=\s*\{/.exec(html)
+    if (!marker) {
+      throw new Error("Could not find ytInitialPlayerResponse in page HTML")
     }
-    return JSON.parse(match[1]);
+    const start = marker.index + marker[0].length - 1
+    let depth = 0
+    let inString = false
+    let escaped = false
+    for (let i = start; i < html.length; i++) {
+      const ch = html[i]
+      if (inString) {
+        if (escaped) {
+          escaped = false
+        } else if (ch === "\\") {
+          escaped = true
+        } else if (ch === '"') {
+          inString = false
+        }
+        continue
+      }
+      if (ch === '"') {
+        inString = true
+      } else if (ch === "{") {
+        depth++
+      } else if (ch === "}") {
+        depth--
+        if (depth === 0) {
+          return JSON.parse(html.slice(start, i + 1))
+        }
+      }
+    }
+    throw new Error("unbalanced braces in ytInitialPlayerResponse")
   }
 
   static getCaptionTracks(playerResponse: any): any[] {

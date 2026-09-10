@@ -14,6 +14,13 @@ describe("YouTubeTranscript", () => {
         "Could not find ytInitialPlayerResponse",
       );
     });
+
+    it("extracts a player response whose string values contain `};`", () => {
+      const html = `<html><script>var ytInitialPlayerResponse = {"x": "a }; and } more", "captions": {"c": 1}};</script></html>`;
+      const result = YouTubeTranscript.extractPlayerResponse(html) as any;
+      expect(result.x).toBe("a }; and } more");
+      expect(result.captions.c).toBe(1);
+    });
   });
 
   describe("getCaptionTracks", () => {
