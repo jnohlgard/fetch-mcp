@@ -1,11 +1,7 @@
 #!/usr/bin/env node
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { Server, type ListToolsResult } from "@modelcontextprotocol/server";
+import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { RequestPayloadSchema, YouTubeTranscriptPayloadSchema } from "./types.js";
 import { Fetcher } from "./Fetcher.js";
 import process from "process";
@@ -25,7 +21,7 @@ const server = new Server(
   },
 );
 
-server.setRequestHandler(ListToolsRequestSchema, async () => {
+server.setRequestHandler("tools/list", async (): Promise<ListToolsResult> => {
   return {
     tools: [
       {
@@ -221,7 +217,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 const FETCH_TOOLS = new Set(["fetch_html", "fetch_json", "fetch_txt", "fetch_markdown", "fetch_readable"]);
 
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
+server.setRequestHandler("tools/call", async (request) => {
   const { name, arguments: args } = request.params;
 
   if (name === "fetch_youtube_transcript") {
