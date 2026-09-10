@@ -48,7 +48,7 @@ Fetcher.html({ url: "http://[::ffff:7f00:1]:port/" })     → 200, isError: fals
 
 **Fix:** expand any `::ffff:` prefix (both long and short form) to the embedded IPv4 before checking, in both `validateUrl` and on the `dns.promises.lookup` result in `validateResolvedIp`. Consider replacing the dependency with a small internal checker since it cannot be fixed upstream. Add regression tests using the exact `::ffff:7f00:1` form.
 
-**Addendum (2026-09-10):** the dependency recommendation has since been carried out. `private-ip` was removed entirely and replaced by `isPrivateIp` (Fetcher.ts), an allowlist built on the maintained `ip-address@10.x` package: `isGlobal()` covers the ranges above and unwraps IPv4-mapped IPv6 natively (so the CVE-2025-8020 class is handled by the library, with `toIpv4IfMapped` kept as message normalization), and the Teredo `2001:20::/28` prefix is blocked explicitly. See `docs/ssrf.md` for the current behavior.
+**Addendum (2026-09-10):** the dependency recommendation has since been carried out. `private-ip` was removed entirely and replaced by `isPrivateIp` (Fetcher.ts), an allowlist built on the maintained `ip-address@10.x` package: `isGlobal()` covers the ranges above and unwraps IPv4-mapped IPv6 natively (the CVE-2025-8020 class is handled by the library), and the Teredo `2001:20::/28` prefix is blocked explicitly. See `docs/ssrf.md` for the current behavior.
 
 ### 2. yt-dlp path bypasses all URL validation (resolved in `fc8ef59`)
 

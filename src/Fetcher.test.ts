@@ -424,33 +424,6 @@ describe("Fetcher", () => {
     });
   });
 
-  describe("toIpv4IfMapped", () => {
-    const toMapped = () => (FetcherModule as any).toIpv4IfMapped as (h: string) => string;
-
-    it("expands the dotted mapped form", () => {
-      expect(toMapped()("::ffff:127.0.0.1")).toBe("127.0.0.1");
-    });
-
-    it("expands the two-hex-group mapped form 7f00:1", () => {
-      expect(toMapped()("::ffff:7f00:1")).toBe("127.0.0.1");
-    });
-
-    it("expands the two-hex-group mapped form a00:1", () => {
-      expect(toMapped()("::ffff:a00:1")).toBe("10.0.0.1");
-    });
-
-    it("expands uppercase mapped forms", () => {
-      expect(toMapped()("::FFFF:7F00:1")).toBe("127.0.0.1");
-    });
-
-    it("passes non-mapped hostnames through unchanged", () => {
-      expect(toMapped()("::1")).toBe("::1");
-      expect(toMapped()("::")).toBe("::");
-      expect(toMapped()("8.8.8.8")).toBe("8.8.8.8");
-      expect(toMapped()("example.com")).toBe("example.com");
-    });
-  });
-
   describe("isPrivateIp", () => {
     const blocked = [
       "10.0.0.1",
