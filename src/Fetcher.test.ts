@@ -744,6 +744,30 @@ describe("Fetcher", () => {
     });
   });
 
+  describe("cloud metadata endpoints", () => {
+    it("blocks the IPv4 cloud metadata address (AWS/GCP/Azure)", () => {
+      expect(isPrivateIp("169.254.169.254")).toBe(true);
+    });
+
+    it("blocks the AWS IPv6 metadata address", () => {
+      expect(isPrivateIp("fd00:ec2::254")).toBe(true);
+    });
+
+    it("still allows public IPs for contrast", () => {
+      expect(isPrivateIp("93.184.216.34")).toBe(false);
+    });
+
+    it("rejects a fetch to the IPv4 metadata endpoint before any network activity", async () => {
+      const result = await Fetcher.html({
+        url: "http://169.254.169.254/latest/meta-data/",
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe("proxy", () => {
     it("should pass proxy option to fetch when provided", async () => {
       mockFetch.mockResolvedValueOnce({
