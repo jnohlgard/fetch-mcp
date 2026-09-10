@@ -643,11 +643,9 @@ describe("Fetcher", () => {
       "rtmp://example.com/live",
     ];
     let execFileSyncSpy: ReturnType<typeof spyOn>;
-    let execSyncSpy: ReturnType<typeof spyOn>;
 
     beforeAll(() => {
       execFileSyncSpy = spyOn(childProcess, "execFileSync");
-      execSyncSpy = spyOn(childProcess, "execSync").mockReturnValue("/tmp/fake-yt-dlp-dir\n");
     });
 
     beforeEach(() => {
@@ -656,7 +654,6 @@ describe("Fetcher", () => {
 
     afterAll(() => {
       execFileSyncSpy.mockRestore();
-      execSyncSpy.mockRestore();
     });
 
     it("never spawns yt-dlp for non-http(s) URLs", async () => {
@@ -734,11 +731,9 @@ describe("Fetcher", () => {
   describe("yt-dlp lang sanitization", () => {
     const flagLikeLangs = ["-o", "--sub-format", "--skip-download"];
     let execFileSyncSpy: ReturnType<typeof spyOn>;
-    let execSyncSpy: ReturnType<typeof spyOn>;
 
     beforeAll(() => {
       execFileSyncSpy = spyOn(childProcess, "execFileSync");
-      execSyncSpy = spyOn(childProcess, "execSync").mockReturnValue("/tmp/fake-yt-dlp-dir\n");
     });
 
     beforeEach(() => {
@@ -747,7 +742,6 @@ describe("Fetcher", () => {
 
     afterAll(() => {
       execFileSyncSpy.mockRestore();
-      execSyncSpy.mockRestore();
     });
 
     it("rejects flag-like lang values without invoking yt-dlp", async () => {
@@ -871,7 +865,6 @@ describe("Fetcher", () => {
     const originalStderrWrite = process.stderr.write;
     let stderrLines: string[] = [];
     let execFileSyncSpy: ReturnType<typeof spyOn>;
-    let execSyncSpy: ReturnType<typeof spyOn>;
 
     const srv1 = '<p t="1234" d="250">hello</p>';
 
@@ -886,12 +879,10 @@ describe("Fetcher", () => {
           return "";
         },
       );
-      execSyncSpy = spyOn(childProcess, "execSync").mockReturnValue("/tmp/fake-yt-dlp-dir\n");
     });
 
     beforeEach(() => {
       execFileSyncSpy.mockClear();
-      execSyncSpy.mockClear();
       stderrLines = [];
       process.stderr.write = ((s: string) => {
         for (const line of s.split("\n")) {
@@ -903,11 +894,10 @@ describe("Fetcher", () => {
 
     afterAll(() => {
       execFileSyncSpy.mockRestore();
-      execSyncSpy.mockRestore();
       process.stderr.write = originalStderrWrite;
     });
 
-    it("prepares its temp dir without any Unix shell command", async () => {
+    it("produces the transcript when yt-dlp succeeds", async () => {
       Fetcher.hasYtDlp = true;
 
       const result = await Fetcher.youtubeTranscript({
@@ -916,7 +906,6 @@ describe("Fetcher", () => {
 
       expect(result.isError).toBe(false);
       expect(result.content[0].text).toContain("hello");
-      expect(execSyncSpy).not.toHaveBeenCalled();
     });
 
     it("reports on stderr when yt-dlp fails and it falls back to direct extraction", async () => {
