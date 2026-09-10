@@ -1,6 +1,5 @@
 import { describe, it, expect, jest, beforeEach, afterAll } from "bun:test";
 import { parseArgs, type ParsedArgs } from "./cli";
-import { Fetcher } from "./Fetcher";
 
 // Save originals
 const originalExit = process.exit;
