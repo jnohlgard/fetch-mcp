@@ -1,7 +1,7 @@
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 import { Readability } from "@mozilla/readability";
-import is_ip_private from "private-ip";
+import { Address4, Address6 } from "ip-address";
 import dns from "node:dns";
 import fs from "node:fs";
 import os from "node:os";
@@ -9,10 +9,9 @@ import path from "node:path";
 import { RequestPayload, YouTubeTranscriptPayload, downloadLimit, maxResponseBytes } from "./types.js";
 import { YouTubeTranscript } from "./YouTubeTranscript.js";
 
-// The `private-ip` package only understands dotted-quad IPv4 and full IPv6 forms,
-// so it misses IPv4-mapped IPv6 addresses such as `::ffff:127.0.0.1` (dotted)
-// and `::ffff:7f00:1` (two 16-bit hex groups). This helper expands the
-// 32-bit IPv4 payload embedded in a mapped address so it can be checked.
+// Normalizes IPv4-mapped IPv6 addresses (e.g. `::ffff:7f00:1`,
+// `::ffff:127.0.0.1`) to the dotted-quad IPv4 they embed, so error messages
+// show the plain address the request would reach.
 export function toIpv4IfMapped(hostname: string): string {
   if (!hostname.toLowerCase().startsWith("::ffff:")) {
     return hostname;
@@ -28,6 +27,30 @@ export function toIpv4IfMapped(hostname: string): string {
     return `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
   }
   return hostname;
+}
+
+// Allowlist-style SSRF check: only IANA "global unicast" addresses pass.
+// ip-address classifies private, loopback, link-local, CGNAT, documentation,
+// benchmarking, reserved, unspecified, and multicast ranges, and unwraps
+// IPv4-mapped IPv6, so `::ffff:7f00:1` reads as loopback. Teredo addresses
+// are global per IANA but embed an attacker-controlled IPv4 address, so the
+// 2001:20::/28 prefix is blocked explicitly.
+const TEREDO_PREFIX_START = 0x20010020000000000000000000000000n;
+const TEREDO_PREFIX_END = 0x2001003fffffffffffffffffffffffffn;
+
+export function isPrivateIp(ip: string): boolean {
+  if (Address4.isValid(ip)) {
+    return !new Address4(ip).isGlobal();
+  }
+  if (Address6.isValid(ip)) {
+    const address = new Address6(ip);
+    if (!address.isGlobal()) {
+      return true;
+    }
+    const value = address.bigInt();
+    return value >= TEREDO_PREFIX_START && value <= TEREDO_PREFIX_END;
+  }
+  return false;
 }
 
 export class Fetcher {
@@ -69,7 +92,7 @@ export class Fetcher {
       ? hostname.slice(1, -1)
       : hostname;
     const target = toIpv4IfMapped(bareHostname);
-    if (target === 'localhost' || is_ip_private(target)) {
+    if (target === 'localhost' || isPrivateIp(target)) {
       throw new Error(
         `Fetcher blocked request to private address "${target}". This prevents SSRF attacks where a local MCP server could access privileged internal services.`,
       );
@@ -84,7 +107,7 @@ export class Fetcher {
     try {
       const { address } = await dns.promises.lookup(bareHostname);
       const resolved = toIpv4IfMapped(address);
-      if (is_ip_private(resolved)) {
+      if (isPrivateIp(resolved)) {
         throw new Error(
           `Fetcher blocked request: hostname "${bareHostname}" resolved to private IP "${resolved}". This prevents DNS rebinding SSRF attacks.`,
         );
