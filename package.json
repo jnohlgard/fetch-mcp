@@ -35,7 +35,7 @@
     "mcp-fetch": "dist/cli.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "keywords": [
     "mcp",
@@ -47,7 +47,7 @@
     "transcript"
   ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/server": "^2.0.0",
     "@mozilla/readability": "^0.6.0",
     "ip-address": "^10.7.0",
     "jsdom": "^30.0.1",
