@@ -22,16 +22,23 @@ export class YouTubeTranscript {
       .replace(/&lt;/g, "<")
       .replace(/&gt;/g, ">")
       .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'");
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)))
+      .replace(
+        /&#x([0-9a-fA-F]+);/g,
+        (_match, code: string) => String.fromCodePoint(parseInt(code, 16)),
+      );
   }
 
   static parseTranscriptXml(xml: string): string[] {
     const lines: string[] = [];
 
     // Format 1: <text start="X" dur="Y">content</text>
-    const textRegex = /<text\s+start="([^"]+)"[^>]*>([\s\S]*?)<\/text>/g;
+    const textRegex = /<text\b([^>]*)>([\s\S]*?)<\/text>/g;
     // Format 2: <p t="X" d="Y">content</p>
-    const pRegex = /<p\s+t="(\d+)"[^>]*>([\s\S]*?)<\/p>/g;
+    const pRegex = /<p\b([^>]*)>([\s\S]*?)<\/p>/g;
 
     let match: RegExpExecArray | null;
 
@@ -40,7 +47,11 @@ export class YouTubeTranscript {
       // Reset and use format 1
       textRegex.lastIndex = 0;
       while ((match = textRegex.exec(xml)) !== null) {
-        const seconds = parseFloat(match[1]);
+        const startAttr = match[1].match(/\bstart="([^"]+)"/);
+        if (!startAttr) {
+          continue;
+        }
+        const seconds = parseFloat(startAttr[1]);
         const content = this.decodeHtmlEntities(match[2].replace(/<[^>]+>/g, "").trim());
         if (content) {
           lines.push(`[${this.formatTimestamp(seconds)}] ${content}`);
@@ -49,7 +60,11 @@ export class YouTubeTranscript {
     } else {
       // Try format 2
       while ((match = pRegex.exec(xml)) !== null) {
-        const ms = parseInt(match[1], 10);
+        const tAttr = match[1].match(/\bt="(\d+)"/);
+        if (!tAttr) {
+          continue;
+        }
+        const ms = parseInt(tAttr[1], 10);
         const seconds = ms / 1000;
         const content = this.decodeHtmlEntities(match[2].replace(/<[^>]+>/g, "").trim());
         if (content) {

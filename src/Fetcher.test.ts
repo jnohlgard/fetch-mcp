@@ -471,6 +471,41 @@ describe("Fetcher", () => {
       const captionUrl = mockFetch.mock.calls[1][0] as string;
       expect(new URL(captionUrl).searchParams.get("fmt")).toBe("srv1");
     });
+
+    it("returns an error when no captions parse", async () => {
+      const playerResponse = {
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [
+              {
+                languageCode: "en",
+                baseUrl: "https://www.youtube.com/api/timedtext?lang=en",
+                name: { simpleText: "English" },
+              },
+            ],
+          },
+        },
+      };
+      const pageHtml = `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></html>`;
+      const captionXml = `<transcript></transcript>`;
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(pageHtml),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(captionXml),
+        });
+
+      const result = await Fetcher.youtubeTranscript({
+        url: "https://www.youtube.com/watch?v=test",
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("No transcript captions were found");
+    });
   });
 
   describe("youtubeTranscript URL validation", () => {

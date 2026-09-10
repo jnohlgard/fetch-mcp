@@ -62,6 +62,13 @@ describe("YouTubeTranscript", () => {
     it("leaves plain text unchanged", () => {
       expect(YouTubeTranscript.decodeHtmlEntities("hello world")).toBe("hello world");
     });
+
+    it("decodes the remaining entities", () => {
+      expect(YouTubeTranscript.decodeHtmlEntities("&apos;")).toBe("'");
+      expect(YouTubeTranscript.decodeHtmlEntities("&nbsp;")).toBe(" ");
+      expect(YouTubeTranscript.decodeHtmlEntities("&#233;")).toBe("é");
+      expect(YouTubeTranscript.decodeHtmlEntities("&#xE9;")).toBe("é");
+    });
   });
 
   describe("parseTranscriptXml", () => {
@@ -115,6 +122,18 @@ describe("YouTubeTranscript", () => {
     it("returns empty array for unrecognized format", () => {
       const lines = YouTubeTranscript.parseTranscriptXml("<something>no match</something>");
       expect(lines).toEqual([]);
+    });
+
+    it("parses <p> tags with shuffled attribute order", () => {
+      const xml = `<transcript><p d="250" t="1234">hello</p></transcript>`;
+      const lines = YouTubeTranscript.parseTranscriptXml(xml);
+      expect(lines).toEqual(["[0:01] hello"]);
+    });
+
+    it("parses <text> tags when start is not the first attribute", () => {
+      const xml = `<transcript><text lang="en" start="1" dur="2">x</text></transcript>`;
+      const lines = YouTubeTranscript.parseTranscriptXml(xml);
+      expect(lines).toEqual(["[0:01] x"]);
     });
   });
 });

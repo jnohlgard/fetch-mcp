@@ -336,6 +336,9 @@ export class Fetcher {
       }
 
       const lines = YouTubeTranscript.parseTranscriptXml(result.xml);
+      if (lines.length === 0) {
+        throw new Error("No transcript captions were found for this video");
+      }
       const header = `[Transcript language: ${result.lang} — ${result.langName}]\n\n`;
       let transcript = header + lines.join("\n");
 
