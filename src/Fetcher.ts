@@ -277,9 +277,10 @@ export class Fetcher {
     const track =
       tracks.find((t: any) => t.languageCode === lang) ?? tracks[0];
 
-    const captionUrl = track.baseUrl + (track.baseUrl.includes("fmt=") ? "" : "&fmt=srv1");
+    const captionUrl = new URL(track.baseUrl);
+    captionUrl.searchParams.set("fmt", "srv1");
     const captionResponse = await this._fetch({
-      url: captionUrl,
+      url: captionUrl.toString(),
       headers: requestPayload.headers,
       proxy: requestPayload.proxy,
     });

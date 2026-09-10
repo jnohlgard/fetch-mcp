@@ -396,6 +396,79 @@ describe("Fetcher", () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("No caption tracks found");
     });
+
+    it("appends ?fmt=srv1 when the base URL has no query string", async () => {
+      const playerResponse = {
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [
+              {
+                languageCode: "en",
+                baseUrl: "https://www.youtube.com/api/timedtext",
+                name: { simpleText: "English" },
+              },
+            ],
+          },
+        },
+      };
+      const pageHtml = `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></html>`;
+      const captionXml = `<transcript><p t="1234" d="250">hello</p></transcript>`;
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(pageHtml),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(captionXml),
+        });
+
+      const result = await Fetcher.youtubeTranscript({
+        url: "https://www.youtube.com/watch?v=test",
+      });
+
+      expect(result.isError).toBe(false);
+      const captionUrl = mockFetch.mock.calls[1][0] as string;
+      expect(captionUrl.split("?").length - 1).toBe(1);
+      expect(new URL(captionUrl).searchParams.get("fmt")).toBe("srv1");
+    });
+
+    it("does not get confused by a fmt= substring elsewhere", async () => {
+      const playerResponse = {
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [
+              {
+                languageCode: "en",
+                baseUrl: "https://example.com/api/timedtext?lang=en&filter=fmt=x",
+                name: { simpleText: "English" },
+              },
+            ],
+          },
+        },
+      };
+      const pageHtml = `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></html>`;
+      const captionXml = `<transcript><p t="1234" d="250">hello</p></transcript>`;
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(pageHtml),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(captionXml),
+        });
+
+      const result = await Fetcher.youtubeTranscript({
+        url: "https://www.youtube.com/watch?v=test",
+      });
+
+      expect(result.isError).toBe(false);
+      const captionUrl = mockFetch.mock.calls[1][0] as string;
+      expect(new URL(captionUrl).searchParams.get("fmt")).toBe("srv1");
+    });
   });
 
   describe("youtubeTranscript URL validation", () => {
