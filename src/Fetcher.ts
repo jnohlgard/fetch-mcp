@@ -6,7 +6,7 @@ import dns from "node:dns";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { RequestPayload, YouTubeTranscriptPayload, downloadLimit, maxResponseBytes } from "./types.js";
+import { RequestPayload, YouTubeTranscriptPayload, TextToolResult, downloadLimit, maxResponseBytes } from "./types.js";
 import { YouTubeTranscript } from "./YouTubeTranscript.js";
 
 // Allowlist-style SSRF check: only IANA "global unicast" addresses pass.
@@ -198,7 +198,7 @@ export class Fetcher {
     }
   }
 
-  static async html(requestPayload: RequestPayload) {
+  static async html(requestPayload: RequestPayload): Promise<TextToolResult> {
     try {
       const response = await this._fetch(requestPayload);
       let html = await this.readResponseText(response);
@@ -219,7 +219,7 @@ export class Fetcher {
     }
   }
 
-  static async json(requestPayload: RequestPayload) {
+  static async json(requestPayload: RequestPayload): Promise<TextToolResult> {
     try {
       const response = await this._fetch(requestPayload);
       const text = await this.readResponseText(response);
@@ -245,7 +245,7 @@ export class Fetcher {
     }
   }
 
-  static async txt(requestPayload: RequestPayload) {
+  static async txt(requestPayload: RequestPayload): Promise<TextToolResult> {
     try {
       const response = await this._fetch(requestPayload);
       const html = await this.readResponseText(response);
@@ -365,7 +365,7 @@ export class Fetcher {
     return this.hasYtDlp;
   }
 
-  static async youtubeTranscript(requestPayload: YouTubeTranscriptPayload) {
+  static async youtubeTranscript(requestPayload: YouTubeTranscriptPayload): Promise<TextToolResult> {
     try {
       // Validate before anything consumes the URL (yt-dlp spawn, DNS, fetch)
       this.validateUrl(requestPayload.url);
@@ -411,7 +411,7 @@ export class Fetcher {
     }
   }
 
-  static async readable(requestPayload: RequestPayload) {
+  static async readable(requestPayload: RequestPayload): Promise<TextToolResult> {
     try {
       const response = await this._fetch(requestPayload);
       const html = await this.readResponseText(response);
@@ -442,7 +442,7 @@ export class Fetcher {
     }
   }
 
-  static async markdown(requestPayload: RequestPayload) {
+  static async markdown(requestPayload: RequestPayload): Promise<TextToolResult> {
     try {
       const response = await this._fetch(requestPayload);
       const html = await this.readResponseText(response);

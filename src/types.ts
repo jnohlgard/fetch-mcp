@@ -40,3 +40,9 @@ export const YouTubeTranscriptPayloadSchema = z.object({
 export type YouTubeTranscriptPayload = RequestPayload & {
   lang?: string;
 };
+
+export interface TextToolResult {
+  content: Array<{ type: "text"; text: string }>;
+  isError: boolean;
+  [key: string]: unknown;
+}
