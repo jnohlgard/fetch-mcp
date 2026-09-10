@@ -91,6 +91,28 @@ describe("Fetcher", () => {
       });
     });
 
+    it("returns the original digits for large numbers", async () => {
+      const bigNumberBody = '{"big": 9007199254740993}';
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce(bigNumberBody),
+      });
+
+      const result = await Fetcher.json(mockRequest);
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toContain("9007199254740993");
+    });
+
+    it("still rejects invalid JSON", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce("<html>not json</html>"),
+      });
+
+      const result = await Fetcher.json(mockRequest);
+      expect(result.isError).toBe(true);
+    });
+
     it("should handle errors", async () => {
       mockFetch.mockRejectedValueOnce(new Error("Invalid JSON"));
 

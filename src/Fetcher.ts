@@ -186,8 +186,8 @@ export class Fetcher {
     try {
       const response = await this._fetch(requestPayload);
       const text = await this.readResponseText(response);
-      const json = JSON.parse(text);
-      let jsonString = JSON.stringify(json);
+      JSON.parse(text);
+      let jsonString = text;
       
       // Apply length limits
       jsonString = this.applyLengthLimits(
