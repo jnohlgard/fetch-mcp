@@ -6,9 +6,9 @@ MCP server + CLI in TypeScript (Bun dev, Node 20+ runtime) for fetching web cont
 
 ```bash
 bun install   # ALWAYS first on a fresh checkout (bun.lock is committed, so installs are reproducible)
-bun test      # bun:test, 7 files in src/, 141 tests
+bun test      # bun:test, 7 files in src/, 157 tests
 bun run typecheck # tsc --noEmit over non-test source (test files are excluded in tsconfig)
-bun run build # bundles to dist/ (only quality gate besides tests; no lint/CI)
+bun run build # bundles to dist/ (all three commands also run in GitHub Actions CI)
 ```
 
 ## Rules that trip up agents
@@ -16,7 +16,7 @@ bun run build # bundles to dist/ (only quality gate besides tests; no lint/CI)
 - Strict ESM: relative imports use `.js` extensions in `.ts` files.
 - Public `Fetcher` methods never throw — they return `{ content: [{ type: "text", text }], isError }`; exact error strings are asserted in tests, don't reword them.
 - `max_length: 0` means unlimited, not zero.
-- New tests touching fetch must stub `dns.promises.lookup` to a public IP and reset `Fetcher.hasYtDlp` in `beforeEach` (see docs/testing.md).
+- New tests touching fetch must stub `dns.promises.lookup` to a public IP and reset the `Fetcher.hasYtDlp` statics, `fetchRateLimiter`, and `FETCH_LOGGING` in `beforeEach` (see docs/testing.md).
 - All new fetch paths go through `Fetcher._fetch` to inherit SSRF/size checks.
 
 ## Read on demand
