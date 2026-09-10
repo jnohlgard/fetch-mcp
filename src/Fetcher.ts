@@ -8,6 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { RequestPayload, ReadablePayload, YouTubeTranscriptPayload, TextToolResult, downloadLimit, maxResponseBytes } from "./types.js";
 import { YouTubeTranscript } from "./YouTubeTranscript.js";
+import { RateLimiter, createFetchRateLimiter } from "./RateLimiter.js";
 
 // Allowlist-style SSRF check: only IANA "global unicast" addresses pass.
 // ip-address classifies private, loopback, link-local, CGNAT, documentation,
@@ -71,6 +72,11 @@ function stripCredentialHeaders(headers: Record<string, string> | undefined): Re
 }
 
 export class Fetcher {
+  // Process-wide cap on concurrent outbound fetches, so a burst of parallel
+  // tool calls can't turn one process into a scraping burst. Tests can swap
+  // in a different limiter, like they do for hasYtDlp.
+  static fetchRateLimiter: RateLimiter = createFetchRateLimiter();
+
   private static applyLengthLimits(text: string, maxLength: number, startIndex: number): string {
     if (startIndex >= text.length) {
       return "";
@@ -158,18 +164,25 @@ export class Fetcher {
 
       let fetched: Response
       try {
-        fetched = await fetch(currentUrl, {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            ...currentHeaders,
-          },
-          redirect: "manual",
-          signal: controller.signal,
-          // Note: proxy is a Bun-specific fetch option. On Node.js, this option is silently ignored.
-          // To use a proxy on Node.js, you would need an HTTP agent library like http-proxy-agent.
-          ...(proxy ? { proxy } : {}),
-        } as RequestInit);
+        // Keep at most the configured number of outbound fetches in flight;
+        // anything beyond that queues here until a slot frees up.
+        await this.fetchRateLimiter.acquire();
+        try {
+          fetched = await fetch(currentUrl, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+              ...currentHeaders,
+            },
+            redirect: "manual",
+            signal: controller.signal,
+            // Note: proxy is a Bun-specific fetch option. On Node.js, this option is silently ignored.
+            // To use a proxy on Node.js, you would need an HTTP agent library like http-proxy-agent.
+            ...(proxy ? { proxy } : {}),
+          } as RequestInit);
+        } finally {
+          this.fetchRateLimiter.release();
+        }
       } catch (e: unknown) {
         if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) {
           throw new Error(`Failed to fetch ${currentUrl}: timed out after ${hopTimeoutMs}ms`);

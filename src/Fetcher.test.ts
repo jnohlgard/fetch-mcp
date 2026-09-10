@@ -8,6 +8,7 @@ import * as childProcess from "node:child_process";
 import { Fetcher, isPrivateIp } from "./Fetcher";
 import * as FetcherModule from "./Fetcher";
 import { YouTubeTranscriptPayloadSchema } from "./types";
+import { RateLimiter, createFetchRateLimiter } from "./RateLimiter";
 
 const originalFetch = globalThis.fetch;
 const mockFetch = jest.fn();
@@ -25,6 +26,7 @@ describe("Fetcher", () => {
     Fetcher.hasYtDlp = false;
     Fetcher.hasYtDlpAt = Date.now()
     Fetcher.checkTtlMs = 60000
+    Fetcher.fetchRateLimiter = createFetchRateLimiter();
     // Default: resolve all hostnames to a public IP so existing tests aren't affected
     dns.promises.lookup = (async () => ({ address: "93.184.216.34", family: 4 })) as any;
   });
@@ -320,6 +322,64 @@ describe("Fetcher", () => {
       const result = await Fetcher.readable(mockRequest);
       expect(result.isError).toBe(false);
       expect(result.content[0].text).not.toContain("PWNED");
+    });
+  });
+
+  describe("concurrency limit", () => {
+    // Mocks fetch with a delay and tracks how many mocked requests are in
+    // flight at once, so a test can assert the semaphore actually serializes
+    // (or doesn't) the outbound calls.
+    function slowFetchMock(delayMs: number): () => number {
+      let inFlight = 0;
+      let maxInFlight = 0;
+      mockFetch.mockImplementation(() => {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        return new Promise((resolve) =>
+          setTimeout(() => {
+            inFlight--;
+            resolve({ ok: true, text: jest.fn().mockResolvedValueOnce("body") });
+          }, delayMs)
+        );
+      });
+      return () => maxInFlight;
+    }
+
+    it("queues the third concurrent fetch when the limit is 1", async () => {
+      Fetcher.fetchRateLimiter = new RateLimiter(1);
+      const maxInFlight = slowFetchMock(30);
+
+      const results = await Promise.all([
+        Fetcher.html({ url: "https://example.com" }),
+        Fetcher.html({ url: "https://example.com" }),
+        Fetcher.html({ url: "https://example.com" }),
+      ]);
+
+      expect(results.every((r) => !r.isError)).toBe(true);
+      expect(maxInFlight()).toBe(1);
+    });
+
+    it("fires all fetches in parallel when the limit is 0 (unlimited)", async () => {
+      Fetcher.fetchRateLimiter = new RateLimiter(0);
+      const maxInFlight = slowFetchMock(30);
+
+      const results = await Promise.all([
+        Fetcher.html({ url: "https://example.com" }),
+        Fetcher.html({ url: "https://example.com" }),
+        Fetcher.html({ url: "https://example.com" }),
+      ]);
+
+      expect(results.every((r) => !r.isError)).toBe(true);
+      expect(maxInFlight()).toBe(3);
+    });
+
+    it("builds the limiter from MAX_CONCURRENT_FETCHES", () => {
+      process.env.MAX_CONCURRENT_FETCHES = "2";
+      try {
+        expect(createFetchRateLimiter().limit).toBe(2);
+      } finally {
+        delete process.env.MAX_CONCURRENT_FETCHES;
+      }
     });
   });
 
