@@ -2,9 +2,9 @@
 
 `_fetch` (Fetcher.ts:55) performs three checks; any new fetch path must go through `_fetch` to inherit them:
 
-1. `validateUrl`: http/https only (blocks `file:`, `data:`, `ftp:`); strips IPv6 brackets; rejects `localhost` and private IPs via the `private-ip` package.
-2. `validateResolvedIp`: DNS-lookup the hostname, reject private resolved IPs (DNS-rebinding defense). Subtle but load-bearing: it swallows lookup failures **only if** the error is not a `Fetcher blocked` error (Fetcher.ts:49-51) — a lookup that resolved to a private IP must propagate, not be treated as a DNS failure.
-3. After fetch, `response.url` is re-validated when it differs from the request URL, catching redirects to private/localhost targets.
+1. `validateUrl`: http/https only (blocks `file:`, `data:`, `ftp:`); strips IPv6 brackets; rejects `localhost` and private IPs via the `private-ip` package. Mapped-IPv6 addresses (`::ffff:a.b.c.d` and `::ffff:XXXX:YYYY`) are expanded to their embedded IPv4 by `toIpv4IfMapped` before the check, because `private-ip` does not understand those forms (this was CVE-2025-8020).
+2. `validateResolvedIp`: DNS-lookup the hostname, reject private resolved IPs (DNS-rebinding defense). The same mapped-IPv6 expansion is applied to the resolved address. Subtle but load-bearing: it swallows lookup failures **only if** the error is not a `Fetcher blocked` error (Fetcher.ts) — a lookup that resolved to a private IP must propagate, not be treated as a DNS failure.
+3. After fetch, `response.url` is re-validated when it differs from the request URL. This is detect-only: every redirect hop in the chain has already fired before the check runs, so a public host that 302-redirects to a private host still receives the hop requests. Per-hop validation (manual redirect following) is tracked as a follow-up finding.
 
 Known limitation (by design, pre-check only): the DNS lookup and the fetch's own resolution are not pinned together, so a TOCTOU rebinding race window remains. There is no custom dispatcher/lookup option wired into `fetch`.
 

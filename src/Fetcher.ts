@@ -6,6 +6,27 @@ import dns from "node:dns";
 import { RequestPayload, YouTubeTranscriptPayload, downloadLimit, maxResponseBytes } from "./types.js";
 import { YouTubeTranscript } from "./YouTubeTranscript.js";
 
+// The `private-ip` package only understands dotted-quad IPv4 and full IPv6 forms,
+// so it misses IPv4-mapped IPv6 addresses such as `::ffff:127.0.0.1` (dotted)
+// and `::ffff:7f00:1` (two 16-bit hex groups). This helper expands the
+// 32-bit IPv4 payload embedded in a mapped address so it can be checked.
+export function toIpv4IfMapped(hostname: string): string {
+  if (!hostname.toLowerCase().startsWith("::ffff:")) {
+    return hostname;
+  }
+  const rest = hostname.slice("::ffff:".length).toLowerCase();
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(rest)) {
+    return rest;
+  }
+  const parts = rest.split(":");
+  if (parts.length === 2 && parts.every((part) => /^[0-9a-f]+$/.test(part))) {
+    const hi = parseInt(parts[0], 16);
+    const lo = parseInt(parts[1], 16);
+    return `${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`;
+  }
+  return hostname;
+}
+
 export class Fetcher {
   private static applyLengthLimits(text: string, maxLength: number, startIndex: number): string {
     if (startIndex >= text.length) {
@@ -27,9 +48,10 @@ export class Fetcher {
     const bareHostname = hostname.startsWith('[') && hostname.endsWith(']')
       ? hostname.slice(1, -1)
       : hostname;
-    if (bareHostname === 'localhost' || is_ip_private(bareHostname)) {
+    const target = toIpv4IfMapped(bareHostname);
+    if (target === 'localhost' || is_ip_private(target)) {
       throw new Error(
-        `Fetcher blocked request to private address "${bareHostname}". This prevents SSRF attacks where a local MCP server could access privileged internal services.`,
+        `Fetcher blocked request to private address "${target}". This prevents SSRF attacks where a local MCP server could access privileged internal services.`,
       );
     }
   }
@@ -41,9 +63,10 @@ export class Fetcher {
       : hostname;
     try {
       const { address } = await dns.promises.lookup(bareHostname);
-      if (is_ip_private(address)) {
+      const resolved = toIpv4IfMapped(address);
+      if (is_ip_private(resolved)) {
         throw new Error(
-          `Fetcher blocked request: hostname "${bareHostname}" resolved to private IP "${address}". This prevents DNS rebinding SSRF attacks.`,
+          `Fetcher blocked request: hostname "${bareHostname}" resolved to private IP "${resolved}". This prevents DNS rebinding SSRF attacks.`,
         );
       }
     } catch (e) {

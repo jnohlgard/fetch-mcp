@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterAll, jest, spyOn } from "bun:test";
 import dns from "node:dns";
 import { Fetcher } from "./Fetcher";
+import * as FetcherModule from "./Fetcher";
 
 const originalFetch = globalThis.fetch;
 const mockFetch = jest.fn();
@@ -205,6 +206,22 @@ describe("Fetcher", () => {
       expect(result.content[0].text).toContain("private address");
     });
 
+    it("should block IPv4-mapped IPv6 addresses in dotted form", async () => {
+      const result = await Fetcher.html({ url: "http://[::ffff:127.0.0.1]/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("should block IPv4-mapped IPv6 addresses in hex form", async () => {
+      const result = await Fetcher.html({ url: "http://[::ffff:7f00:1]/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
     it("should block redirects to private IPs", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
@@ -229,6 +246,33 @@ describe("Fetcher", () => {
       const result = await Fetcher.html({ url: "https://example.com" });
       expect(result.isError).toBe(false);
       expect(result.content[0].text).toBe("<html>ok</html>");
+    });
+  });
+
+  describe("toIpv4IfMapped", () => {
+    const toMapped = () => (FetcherModule as any).toIpv4IfMapped as (h: string) => string;
+
+    it("expands the dotted mapped form", () => {
+      expect(toMapped()("::ffff:127.0.0.1")).toBe("127.0.0.1");
+    });
+
+    it("expands the two-hex-group mapped form 7f00:1", () => {
+      expect(toMapped()("::ffff:7f00:1")).toBe("127.0.0.1");
+    });
+
+    it("expands the two-hex-group mapped form a00:1", () => {
+      expect(toMapped()("::ffff:a00:1")).toBe("10.0.0.1");
+    });
+
+    it("expands uppercase mapped forms", () => {
+      expect(toMapped()("::FFFF:7F00:1")).toBe("127.0.0.1");
+    });
+
+    it("passes non-mapped hostnames through unchanged", () => {
+      expect(toMapped()("::1")).toBe("::1");
+      expect(toMapped()("::")).toBe("::");
+      expect(toMapped()("8.8.8.8")).toBe("8.8.8.8");
+      expect(toMapped()("example.com")).toBe("example.com");
     });
   });
 

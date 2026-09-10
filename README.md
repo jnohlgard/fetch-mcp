@@ -142,7 +142,7 @@ Example with a custom limit:
 - Proxy support for requests behind firewalls
 - Pagination with `max_length` and `start_index`
 - Custom request headers
-- SSRF protection (blocks private/localhost addresses and DNS rebinding)
+- SSRF protection (blocks private/localhost addresses, IPv4-mapped IPv6 addresses, and DNS-rebinding to private IPs on the initial request)
 - Response size limits to prevent memory exhaustion
 
 ## Development
