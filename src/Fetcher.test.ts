@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll, afterAll, jest, spyOn } from "bun:test";
 import dns from "node:dns";
+import fs from "node:fs";
+import path from "node:path";
 import * as childProcess from "node:child_process";
 import { Fetcher } from "./Fetcher";
 import * as FetcherModule from "./Fetcher";
@@ -699,6 +701,89 @@ describe("Fetcher", () => {
       });
       expect(result.isError).toBe(false);
       lookupSpy.mockRestore();
+    });
+  });
+
+  describe("yt-dlp portability", () => {
+    const originalStderrWrite = process.stderr.write;
+    let stderrLines: string[] = [];
+    let execFileSyncSpy: ReturnType<typeof spyOn>;
+    let execSyncSpy: ReturnType<typeof spyOn>;
+
+    const srv1 = '<p t="1234" d="250">hello</p>';
+
+    beforeAll(() => {
+      execFileSyncSpy = spyOn(childProcess, "execFileSync").mockImplementation(
+        (_file: string, args: string[] = []) => {
+          const outIndex = args.indexOf("-o");
+          const outputTemplate = args[outIndex + 1];
+          const dir = path.dirname(outputTemplate);
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(`${dir}/sub.en.srv1`, srv1, "utf-8");
+          return "";
+        },
+      );
+      execSyncSpy = spyOn(childProcess, "execSync").mockReturnValue("/tmp/fake-yt-dlp-dir\n");
+    });
+
+    beforeEach(() => {
+      execFileSyncSpy.mockClear();
+      execSyncSpy.mockClear();
+      stderrLines = [];
+      process.stderr.write = ((s: string) => {
+        for (const line of s.split("\n")) {
+          if (line.length > 0) stderrLines.push(line);
+        }
+        return true;
+      }) as any;
+    });
+
+    afterAll(() => {
+      execFileSyncSpy.mockRestore();
+      execSyncSpy.mockRestore();
+      process.stderr.write = originalStderrWrite;
+    });
+
+    it("prepares its temp dir without any Unix shell command", async () => {
+      Fetcher.hasYtDlp = true;
+
+      const result = await Fetcher.youtubeTranscript({
+        url: "https://www.youtube.com/watch?v=abc123",
+      });
+
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toContain("hello");
+      expect(execSyncSpy).not.toHaveBeenCalled();
+    });
+
+    it("reports on stderr when yt-dlp fails and it falls back to direct extraction", async () => {
+      Fetcher.hasYtDlp = true;
+      execFileSyncSpy.mockImplementation(() => {
+        throw new Error("boom: yt-dlp crashed");
+      });
+
+      const playerResponse = {
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [{ languageCode: "en", baseUrl: "https://youtube.com/api/timedtext?lang=en", name: { simpleText: "English" } }],
+          },
+        },
+      };
+      const pageHtml = `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></html>`;
+      const captionXml = `<transcript><text start="0" dur="2">Fallback line</text></transcript>`;
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, text: jest.fn().mockResolvedValueOnce(pageHtml) })
+        .mockResolvedValueOnce({ ok: true, text: jest.fn().mockResolvedValueOnce(captionXml) });
+
+      const result = await Fetcher.youtubeTranscript({
+        url: "https://www.youtube.com/watch?v=abc123",
+      });
+
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toContain("Fallback line");
+      expect(stderrLines).toHaveLength(1);
+      expect(stderrLines[0]).toContain("yt-dlp");
+      expect(stderrLines[0]).toMatch(/falling back to direct transcript extraction/i);
     });
   });
 

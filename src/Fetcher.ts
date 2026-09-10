@@ -3,6 +3,9 @@ import TurndownService from "turndown";
 import { Readability } from "@mozilla/readability";
 import is_ip_private from "private-ip";
 import dns from "node:dns";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { RequestPayload, YouTubeTranscriptPayload, downloadLimit, maxResponseBytes } from "./types.js";
 import { YouTubeTranscript } from "./YouTubeTranscript.js";
 
@@ -230,8 +233,8 @@ export class Fetcher {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,9}$/.test(lang)) {
       throw new Error(`Invalid language code: "${lang}". Must start with a letter or digit, contain only letters, digits, and hyphens, and be at most 10 characters.`);
     }
-    const { execFileSync, execSync } = await import("child_process");
-    const tmpDir = execSync("mktemp -d", { encoding: "utf-8" }).trim();
+    const { execFileSync } = await import("child_process");
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "fetch-mcp-"));
     try {
       execFileSync(
         "yt-dlp",
@@ -299,7 +302,8 @@ export class Fetcher {
     if (this.hasYtDlp !== null) return this.hasYtDlp;
     try {
       const { execSync } = await import("child_process");
-      execSync("which yt-dlp", { encoding: "utf-8", stdio: "pipe" });
+      const probe = process.platform === "win32" ? "where yt-dlp" : "which yt-dlp";
+      execSync(probe, { encoding: "utf-8", stdio: "pipe" });
       this.hasYtDlp = true;
     } catch {
       this.hasYtDlp = false;
@@ -321,7 +325,10 @@ export class Fetcher {
         }
         try {
           result = await this.fetchTranscriptViaYtDlp(requestPayload.url, lang);
-        } catch {
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          const shortReason = reason.replace(/\s+/g, " ").trim().slice(0, 120);
+          process.stderr.write(`yt-dlp failed (${shortReason}). Falling back to direct transcript extraction.\n`);
           result = await this.fetchTranscriptDirect(requestPayload);
         }
       } else {
