@@ -11,6 +11,7 @@ export const RequestPayloadSchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
   max_length: z.number().int().min(0).optional().default(downloadLimit),
   start_index: z.number().int().min(0).optional().default(0),
+  /** Optional proxy URL (e.g. 'http://proxy:8080'). Bun-only: silently ignored when running under Node. */
   proxy: z.string().url().optional(),
 });
 
@@ -20,6 +21,7 @@ export type RequestPayload = {
   headers?: Record<string, string>;
   max_length?: number;
   start_index?: number;
+  /** Optional proxy URL (e.g. 'http://proxy:8080'). Bun-only: silently ignored when running under Node. */
   proxy?: string;
 };
 
@@ -33,6 +35,7 @@ export const YouTubeTranscriptPayloadSchema = z.object({
   headers: z.record(z.string(), z.string()).optional(),
   max_length: z.number().int().min(0).optional().default(downloadLimit),
   start_index: z.number().int().min(0).optional().default(0),
+  /** Optional proxy URL (e.g. 'http://proxy:8080'). Bun-only: silently ignored when running under Node. */
   proxy: z.string().url().optional(),
   lang: z.string().optional().default("en"),
 });

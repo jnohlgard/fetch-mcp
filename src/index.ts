@@ -51,7 +51,7 @@ export function createFetchServer(): Server {
               },
               proxy: {
                 type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080')",
+                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
               },
             },
             required: ["url"],
@@ -81,7 +81,7 @@ export function createFetchServer(): Server {
               },
               proxy: {
                 type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080')",
+                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
               },
             },
             required: ["url"],
@@ -112,7 +112,7 @@ export function createFetchServer(): Server {
               },
               proxy: {
                 type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080')",
+                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
               },
             },
             required: ["url"],
@@ -142,7 +142,7 @@ export function createFetchServer(): Server {
               },
               proxy: {
                 type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080')",
+                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
               },
             },
             required: ["url"],
@@ -173,7 +173,7 @@ export function createFetchServer(): Server {
               },
               proxy: {
                 type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080')",
+                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
               },
             },
             required: ["url"],
@@ -204,7 +204,7 @@ export function createFetchServer(): Server {
               },
               proxy: {
                 type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080')",
+                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
               },
               lang: {
                 type: "string",

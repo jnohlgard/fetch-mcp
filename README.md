@@ -20,7 +20,9 @@ All tools accept the following common parameters:
 | `headers` | object | No | Custom headers to include in the request |
 | `max_length` | number | No | Maximum characters to return (default: 5000) |
 | `start_index` | number | No | Start from this character index (default: 0) |
-| `proxy` | string | No | Proxy URL (e.g. `http://proxy:8080`) |
+| `proxy` | string | No | Proxy URL (e.g. `http://proxy:8080`) — only honored when running under Bun |
+
+> **Note:** `proxy` is a Bun-specific `fetch()` option. It is silently ignored when the server runs on Node (the default `npx` install path), so requests go direct in that case.
 
 - **fetch_html** — Fetch a website and return its raw HTML content.
 
@@ -87,7 +89,7 @@ mcp-fetch <command> <url> [flags]
 |------|-------------|
 | `--max-length <N>` | Maximum characters to return |
 | `--start-index <N>` | Start from this character index |
-| `--proxy <URL>` | Proxy URL |
+| `--proxy <URL>` | Proxy URL (only honored when running under Bun) |
 | `--lang <code>` | Language code for YouTube transcripts (default: `en`) |
 | `--help` | Show help message |
 | `--version` | Show version |
@@ -107,7 +109,7 @@ mcp-fetch youtube https://www.youtube.com/watch?v=dQw4w9WgXcQ --lang es
 # Fetch with a length limit
 mcp-fetch html https://example.com --max-length 10000
 
-# Fetch through a proxy
+# Fetch through a proxy (Bun only — silently ignored when running on Node)
 mcp-fetch json https://api.example.com/data --proxy http://proxy:8080
 ```
 
@@ -141,7 +143,7 @@ Example with a custom limit:
 - Fetch web content as HTML, JSON, plain text, or Markdown
 - Extract article content with Mozilla Readability (strips ads, nav, boilerplate)
 - Extract YouTube video transcripts (via `yt-dlp` or direct extraction)
-- Proxy support for requests behind firewalls
+- Proxy support for requests behind firewalls (Bun only; silently ignored when running on Node)
 - Pagination with `max_length` and `start_index`
 - Custom request headers
 - SSRF protection (blocks private/localhost addresses, IPv4-mapped IPv6 addresses, DNS-rebinding to private IPs on the first resolution, and every redirect hop before it fires)

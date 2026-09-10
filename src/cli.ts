@@ -19,7 +19,7 @@ Commands:
 Flags:
   --max-length <N>   Maximum characters to return
   --start-index <N>  Start from this character index
-  --proxy <URL>      Proxy URL
+  --proxy <URL>      Proxy URL (Bun only; silently ignored on Node)
   --lang <code>      Language code for YouTube transcripts (default: en)
   --help             Show this help message
   --version          Show version
