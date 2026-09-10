@@ -6,7 +6,7 @@ MCP server + CLI in TypeScript (Bun dev, Node runtime) for fetching web content 
 
 ```bash
 bun install   # ALWAYS first on a fresh checkout (bun.lock is gitignored; tests fail without it)
-bun test      # bun:test, 6 files in src/, 122 tests
+bun test      # bun:test, 6 files in src/, 124 tests
 bun run build # bundles to dist/ (only quality gate besides tests; no lint/CI)
 ```
 
