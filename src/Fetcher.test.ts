@@ -494,6 +494,58 @@ describe("Fetcher", () => {
   });
 
   describe("yt-dlp lang sanitization", () => {
+    const flagLikeLangs = ["-o", "--sub-format", "--skip-download"];
+    let execFileSyncSpy: ReturnType<typeof spyOn>;
+    let execSyncSpy: ReturnType<typeof spyOn>;
+
+    beforeAll(() => {
+      execFileSyncSpy = spyOn(childProcess, "execFileSync");
+      execSyncSpy = spyOn(childProcess, "execSync").mockReturnValue("/tmp/fake-yt-dlp-dir\n");
+    });
+
+    beforeEach(() => {
+      execFileSyncSpy.mockClear();
+    });
+
+    afterAll(() => {
+      execFileSyncSpy.mockRestore();
+      execSyncSpy.mockRestore();
+    });
+
+    it("rejects flag-like lang values without invoking yt-dlp", async () => {
+      for (const lang of flagLikeLangs) {
+        Fetcher.hasYtDlp = true;
+
+        const result = await Fetcher.youtubeTranscript({
+          url: "https://www.youtube.com/watch?v=abc123",
+          lang,
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("Invalid language code");
+        expect(execFileSyncSpy).not.toHaveBeenCalled();
+      }
+    });
+
+    it("passes BCP-47 codes like es-419 and zh-Hans through validation", async () => {
+      for (const lang of ["es-419", "zh-Hans"]) {
+        Fetcher.hasYtDlp = true;
+        execFileSyncSpy.mockImplementationOnce(() => {
+          throw new Error("yt-dlp failed");
+        });
+        mockFetch.mockRejectedValueOnce(new Error("Network error"));
+
+        const result = await Fetcher.youtubeTranscript({
+          url: "https://www.youtube.com/watch?v=abc123",
+          lang,
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).not.toContain("Invalid language code");
+        expect(execFileSyncSpy).toHaveBeenCalled();
+      }
+    });
+
     it("should reject lang with shell metacharacters", async () => {
       Fetcher.hasYtDlp = true;
 

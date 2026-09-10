@@ -227,8 +227,8 @@ export class Fetcher {
     videoUrl: string,
     lang: string,
   ): Promise<{ xml: string; lang: string; langName: string }> {
-    if (!/^[a-zA-Z0-9-]+$/.test(lang)) {
-      throw new Error(`Invalid language code: "${lang}". Only letters, digits, and hyphens are allowed.`);
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,9}$/.test(lang)) {
+      throw new Error(`Invalid language code: "${lang}". Must start with a letter or digit, contain only letters, digits, and hyphens, and be at most 10 characters.`);
     }
     const { execFileSync, execSync } = await import("child_process");
     const tmpDir = execSync("mktemp -d", { encoding: "utf-8" }).trim();
@@ -315,8 +315,8 @@ export class Fetcher {
 
       if (await this.checkYtDlp()) {
         // Validate lang before attempting yt-dlp — this is a security check that must not be swallowed
-        if (!/^[a-zA-Z0-9-]+$/.test(lang)) {
-          throw new Error(`Invalid language code: "${lang}". Only letters, digits, and hyphens are allowed.`);
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,9}$/.test(lang)) {
+          throw new Error(`Invalid language code: "${lang}". Must start with a letter or digit, contain only letters, digits, and hyphens, and be at most 10 characters.`);
         }
         try {
           result = await this.fetchTranscriptViaYtDlp(requestPayload.url, lang);
