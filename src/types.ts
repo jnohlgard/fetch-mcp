@@ -24,7 +24,12 @@ export type RequestPayload = {
 };
 
 export const YouTubeTranscriptPayloadSchema = z.object({
-  url: z.string().url(),
+  url: z
+    .string()
+    .url()
+    .refine((u) => /^https?:\/\//i.test(u), {
+      message: "Only HTTP and HTTPS URLs are allowed",
+    }),
   headers: z.record(z.string(), z.string()).optional(),
   max_length: z.number().int().min(0).optional().default(downloadLimit),
   start_index: z.number().int().min(0).optional().default(0),

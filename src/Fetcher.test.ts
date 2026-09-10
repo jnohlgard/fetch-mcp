@@ -1,7 +1,9 @@
-import { describe, it, expect, beforeEach, afterAll, jest, spyOn } from "bun:test";
+import { describe, it, expect, beforeEach, beforeAll, afterAll, jest, spyOn } from "bun:test";
 import dns from "node:dns";
+import * as childProcess from "node:child_process";
 import { Fetcher } from "./Fetcher";
 import * as FetcherModule from "./Fetcher";
+import { YouTubeTranscriptPayloadSchema } from "./types";
 
 const originalFetch = globalThis.fetch;
 const mockFetch = jest.fn();
@@ -393,6 +395,53 @@ describe("Fetcher", () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("No caption tracks found");
+    });
+  });
+
+  describe("youtubeTranscript URL validation", () => {
+    const nonHttpUrls = [
+      "file:///etc/passwd",
+      "ftp://example.com/file",
+      "rtmp://example.com/live",
+    ];
+    let execFileSyncSpy: ReturnType<typeof spyOn>;
+    let execSyncSpy: ReturnType<typeof spyOn>;
+
+    beforeAll(() => {
+      execFileSyncSpy = spyOn(childProcess, "execFileSync");
+      execSyncSpy = spyOn(childProcess, "execSync").mockReturnValue("/tmp/fake-yt-dlp-dir\n");
+    });
+
+    beforeEach(() => {
+      execFileSyncSpy.mockClear();
+    });
+
+    afterAll(() => {
+      execFileSyncSpy.mockRestore();
+      execSyncSpy.mockRestore();
+    });
+
+    it("never spawns yt-dlp for non-http(s) URLs", async () => {
+      for (const url of nonHttpUrls) {
+        Fetcher.hasYtDlp = true;
+
+        const result = await Fetcher.youtubeTranscript({ url });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("disallowed protocol");
+        expect(execFileSyncSpy).not.toHaveBeenCalled();
+      }
+    });
+
+    it("zod schema rejects non-http(s) URLs", () => {
+      for (const url of nonHttpUrls) {
+        expect(YouTubeTranscriptPayloadSchema.safeParse({ url }).success).toBe(false);
+      }
+      expect(
+        YouTubeTranscriptPayloadSchema.safeParse({
+          url: "https://www.youtube.com/watch?v=abc123",
+        }).success,
+      ).toBe(true);
     });
   });
 

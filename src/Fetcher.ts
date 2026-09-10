@@ -244,13 +244,18 @@ export class Fetcher {
         ],
         { encoding: "utf-8", timeout: 30000, stdio: ["pipe", "pipe", "pipe"] },
       );
-      const { readdirSync, readFileSync } = await import("fs");
+      const { readdirSync, readFileSync, statSync } = await import("fs");
       const files = readdirSync(tmpDir).filter((f: string) => f.endsWith(".srv1"));
       if (files.length === 0) {
         throw new Error("yt-dlp did not produce subtitle files");
       }
       const file = files[0];
-      const xml = readFileSync(`${tmpDir}/${file}`, "utf-8");
+      const filePath = `${tmpDir}/${file}`;
+      const size = statSync(filePath).size;
+      if (size > maxResponseBytes) {
+        throw new Error(`Subtitle file too large: ${size} bytes exceeds ${maxResponseBytes} byte limit`);
+      }
+      const xml = readFileSync(filePath, "utf-8");
       const matchedLang = file.match(/\.([^.]+)\.srv1$/)?.[1] ?? lang;
       return { xml, lang: matchedLang, langName: matchedLang };
     } finally {
@@ -303,6 +308,8 @@ export class Fetcher {
 
   static async youtubeTranscript(requestPayload: YouTubeTranscriptPayload) {
     try {
+      // Validate before anything consumes the URL (yt-dlp spawn, DNS, fetch)
+      this.validateUrl(requestPayload.url);
       const lang = requestPayload.lang ?? "en";
       let result: { xml: string; lang: string; langName: string };
 
