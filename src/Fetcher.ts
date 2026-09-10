@@ -56,6 +56,20 @@ function getCaptionTimeoutMs(): number {
   return timeoutFromEnv("FETCH_CAPTION_TIMEOUT_MS", DEFAULT_CAPTION_TIMEOUT_MS);
 }
 
+// Credential-bearing headers that must not follow a request across an origin
+// boundary, matching browser/fetch redirect semantics.
+const CREDENTIAL_HEADERS = new Set(["authorization", "cookie", "proxy-authorization"]);
+
+function stripCredentialHeaders(headers: Record<string, string> | undefined): Record<string, string> {
+  if (!headers) return {};
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (CREDENTIAL_HEADERS.has(key.toLowerCase())) continue;
+    result[key] = value;
+  }
+  return result;
+}
+
 export class Fetcher {
   private static applyLengthLimits(text: string, maxLength: number, startIndex: number): string {
     if (startIndex >= text.length) {
@@ -126,6 +140,7 @@ export class Fetcher {
   }: RequestPayload, timeoutMs?: number): Promise<Response> {
     const maxRedirectHops = 20;
     let currentUrl = url;
+    let currentHeaders = headers;
     let hopCount = 0;
     let response: Response;
 
@@ -147,7 +162,7 @@ export class Fetcher {
           headers: {
             "User-Agent":
               "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            ...headers,
+            ...currentHeaders,
           },
           redirect: "manual",
           signal: controller.signal,
@@ -187,7 +202,16 @@ export class Fetcher {
         }
         fetched.body?.cancel().catch(() => {})
         hopCount += 1
-        currentUrl = new URL(location, currentUrl).toString()
+        const nextUrl = new URL(location, currentUrl).toString()
+        // Mirror fetch/browser redirect semantics: once a hop crosses an origin
+        // boundary, drop credential-bearing headers (Authorization, Cookie,
+        // Proxy-Authorization) so they are never leaked to a different host.
+        // Stripping is one-way - a later hop back to the original origin does
+        // not re-add them.
+        if (new URL(currentUrl).origin !== new URL(nextUrl).origin) {
+          currentHeaders = stripCredentialHeaders(currentHeaders);
+        }
+        currentUrl = nextUrl
         continue
       }
 

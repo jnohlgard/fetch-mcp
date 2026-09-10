@@ -424,6 +424,71 @@ describe("Fetcher", () => {
     });
   });
 
+  describe("cross-origin redirect credentials", () => {
+    it("does not send Authorization on a same-origin-to-cross-origin redirect", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: "https://other.example.com/final" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce("<html>ok</html>"),
+        });
+
+      await Fetcher.html({
+        url: "https://example.com/start",
+        headers: { Authorization: "Bearer secret", "X-Keep": "yes" },
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const secondHeaders = mockFetch.mock.calls[1][1].headers as Record<string, string>;
+      expect(secondHeaders).not.toHaveProperty("Authorization");
+      expect(secondHeaders).not.toHaveProperty("authorization");
+      // Non-credential headers still follow the redirect.
+      expect(secondHeaders).toHaveProperty("X-Keep", "yes");
+    });
+
+    it("keeps Authorization across a same-origin redirect", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: "https://example.com/elsewhere" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce("<html>ok</html>"),
+        });
+
+      await Fetcher.html({
+        url: "https://example.com/start",
+        headers: { Authorization: "Bearer secret" },
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+      const secondHeaders = mockFetch.mock.calls[1][1].headers as Record<string, string>;
+      expect(secondHeaders).toHaveProperty("Authorization", "Bearer secret");
+    });
+
+    it("keeps Authorization on the initial (non-redirect) request", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce("<html>ok</html>"),
+      });
+
+      await Fetcher.html({
+        url: "https://example.com/start",
+        headers: { Authorization: "Bearer secret" },
+      });
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const firstHeaders = mockFetch.mock.calls[0][1].headers as Record<string, string>;
+      expect(firstHeaders).toHaveProperty("Authorization", "Bearer secret");
+    });
+  });
+
   describe("isPrivateIp", () => {
     const blocked = [
       "10.0.0.1",

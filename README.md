@@ -145,6 +145,7 @@ Example with a custom limit:
 - Pagination with `max_length` and `start_index`
 - Custom request headers
 - SSRF protection (blocks private/localhost addresses, IPv4-mapped IPv6 addresses, DNS-rebinding to private IPs on the first resolution, and every redirect hop before it fires)
+- Credential headers (`Authorization`, `Cookie`, `Proxy-Authorization`) are stripped from redirect hops that cross to a different origin
 - Response size limits to prevent memory exhaustion
 - Per-request timeouts (30 s per redirect hop, 10 s for the YouTube caption fetch) so a hung or slowloris connection cannot block a request indefinitely
 
