@@ -1,6 +1,6 @@
 # SSRF protection and size limits
 
-`_fetch` (Fetcher.ts:55) performs three checks; any new fetch path must go through `_fetch` to inherit them:
+`_fetch` (Fetcher.ts:98) performs three checks; any new fetch path must go through `_fetch` to inherit them:
 
 1. `validateUrl`: http/https only (blocks `file:`, `data:`, `ftp:`); strips IPv6 brackets; rejects `localhost` and private IPs via the `private-ip` package. Mapped-IPv6 addresses (`::ffff:a.b.c.d` and `::ffff:XXXX:YYYY`) are expanded to their embedded IPv4 by `toIpv4IfMapped` before the check, because `private-ip` does not understand those forms (this was CVE-2025-8020).
 2. `validateResolvedIp`: DNS-lookup the hostname, reject private resolved IPs (DNS-rebinding defense). The same mapped-IPv6 expansion is applied to the resolved address. Subtle but load-bearing: it swallows lookup failures **only if** the error is not a `Fetcher blocked` error (Fetcher.ts) — a lookup that resolved to a private IP must propagate, not be treated as a DNS failure.
