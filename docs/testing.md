@@ -1,9 +1,10 @@
 # Testing patterns
 
-Two parallel test styles per module:
+Three test styles:
 
 - `src/<Name>.test.ts` — synthetic fixtures with heavy mocking: `globalThis.fetch` replaced by a `jest.fn()` mock (bun:test is jest-compatible — `jest.fn()`, `mockResolvedValueOnce`, `spyOn`), chained `.mockResolvedValueOnce` for sequential fetches (e.g., page then caption URL), and `spyOn(dns.promises, "lookup")` for DNS-rebinding scenarios.
 - `src/<Name>.fixture.test.ts` — real captured payloads (actual YouTube srv1/srv3 XML, realistic player-response JSON) driven through the **real** JSDOM/Turndown/Readability code paths, asserting exact formatted output.
+- `src/Fetcher.ssrf.test.ts` is the one exception to full mocking: real, unmocked `fetch` against a local loopback HTTP server, proving SSRF rejection happens before any request leaves the host (no internet needed).
 
 Mandatory setup in any test file that exercises `Fetcher._fetch`:
 
@@ -12,7 +13,7 @@ Mandatory setup in any test file that exercises `Fetcher._fetch`:
 dns.promises.lookup = (async () => ({ address: "93.184.216.34", family: 4 })) as any;
 ```
 
-and reset `Fetcher.hasYtDlp = false` in `beforeEach` (the check is cached per process).
+and reset `Fetcher.hasYtDlp = false` (plus `Fetcher.hasYtDlpAt` and `Fetcher.checkTtlMs`) in `beforeEach` (the yt-dlp availability check is cached with a TTL, default 60s).
 
 `cli.test.ts` monkeypatches `process.exit` (made to throw `"EXIT"`), `process.stdout.write`, and `process.stderr.write` to capture exit codes and output; originals saved at module top, restored in `afterAll`.
 

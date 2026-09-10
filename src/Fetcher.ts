@@ -1,10 +1,37 @@
 import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
 import { Readability } from "@mozilla/readability";
-import is_ip_private from "private-ip";
+import { Address4, Address6 } from "ip-address";
 import dns from "node:dns";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { RequestPayload, YouTubeTranscriptPayload, downloadLimit, maxResponseBytes } from "./types.js";
 import { YouTubeTranscript } from "./YouTubeTranscript.js";
+
+// Allowlist-style SSRF check: only IANA "global unicast" addresses pass.
+// ip-address classifies private, loopback, link-local, CGNAT, documentation,
+// benchmarking, reserved, unspecified, and multicast ranges, and unwraps
+// IPv4-mapped IPv6, so `::ffff:7f00:1` reads as loopback. Teredo addresses
+// are global per IANA but embed an attacker-controlled IPv4 address, so the
+// 2001:20::/28 prefix is blocked explicitly.
+const TEREDO_PREFIX_START = 0x20010020000000000000000000000000n;
+const TEREDO_PREFIX_END = 0x2001003fffffffffffffffffffffffffn;
+
+export function isPrivateIp(ip: string): boolean {
+  if (Address4.isValid(ip)) {
+    return !new Address4(ip).isGlobal();
+  }
+  if (Address6.isValid(ip)) {
+    const address = new Address6(ip);
+    if (!address.isGlobal()) {
+      return true;
+    }
+    const value = address.bigInt();
+    return value >= TEREDO_PREFIX_START && value <= TEREDO_PREFIX_END;
+  }
+  return false;
+}
 
 export class Fetcher {
   private static applyLengthLimits(text: string, maxLength: number, startIndex: number): string {
@@ -13,6 +40,23 @@ export class Fetcher {
     }
 
     const end = maxLength > 0 ? Math.min(startIndex + maxLength, text.length) : text.length;
+
+    const splitsPair = (index: number): boolean => {
+      if (index === 0 || index >= text.length) {
+        return false;
+      }
+      const code = text.charCodeAt(index);
+      if (code < 0xdc00 || code > 0xdfff) {
+        return false;
+      }
+      const prev = text.charCodeAt(index - 1);
+      return prev >= 0xd800 && prev <= 0xdbff;
+    };
+
+    if (splitsPair(startIndex) || splitsPair(end)) {
+      return Array.from(text).slice(startIndex, end).join("");
+    }
+
     return text.substring(startIndex, end);
   }
 
@@ -27,7 +71,7 @@ export class Fetcher {
     const bareHostname = hostname.startsWith('[') && hostname.endsWith(']')
       ? hostname.slice(1, -1)
       : hostname;
-    if (bareHostname === 'localhost' || is_ip_private(bareHostname)) {
+    if (bareHostname === 'localhost' || isPrivateIp(bareHostname)) {
       throw new Error(
         `Fetcher blocked request to private address "${bareHostname}". This prevents SSRF attacks where a local MCP server could access privileged internal services.`,
       );
@@ -41,7 +85,7 @@ export class Fetcher {
       : hostname;
     try {
       const { address } = await dns.promises.lookup(bareHostname);
-      if (is_ip_private(address)) {
+      if (isPrivateIp(address)) {
         throw new Error(
           `Fetcher blocked request: hostname "${bareHostname}" resolved to private IP "${address}". This prevents DNS rebinding SSRF attacks.`,
         );
@@ -57,25 +101,61 @@ export class Fetcher {
     headers,
     proxy,
   }: RequestPayload): Promise<Response> {
-    this.validateUrl(url);
-    await this.validateResolvedIp(url);
+    const maxRedirectHops = 20;
+    let currentUrl = url;
+    let hopCount = 0;
     let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          ...headers,
-        },
-        // Note: proxy is a Bun-specific fetch option. On Node.js, this option is silently ignored.
-        // To use a proxy on Node.js, you would need an HTTP agent library like http-proxy-agent.
-        ...(proxy ? { proxy } : {}),
-      } as RequestInit);
-    } catch (e: unknown) {
-      if (e instanceof Error) {
-        throw new Error(`Failed to fetch ${url}: ${e.message}`);
+
+    for (;;) {
+      this.validateUrl(currentUrl);
+      await this.validateResolvedIp(currentUrl);
+
+      let fetched: Response
+      try {
+        fetched = await fetch(currentUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            ...headers,
+          },
+          redirect: "manual",
+          // Note: proxy is a Bun-specific fetch option. On Node.js, this option is silently ignored.
+          // To use a proxy on Node.js, you would need an HTTP agent library like http-proxy-agent.
+          ...(proxy ? { proxy } : {}),
+        } as RequestInit);
+      } catch (e: unknown) {
+        if (e instanceof Error) {
+          throw new Error(`Failed to fetch ${currentUrl}: ${e.message}`);
+        }
+        throw new Error(`Failed to fetch ${currentUrl}: Unknown error`);
       }
-      throw new Error(`Failed to fetch ${url}: Unknown error`);
+
+      if (
+        fetched.status === 301 ||
+        fetched.status === 302 ||
+        fetched.status === 303 ||
+        fetched.status === 307 ||
+        fetched.status === 308
+      ) {
+        if (hopCount >= maxRedirectHops) {
+          fetched.body?.cancel().catch(() => {})
+          throw new Error(
+            `Failed to fetch ${url}: too many redirects (exceeded ${maxRedirectHops} hops)`,
+          )
+        }
+        const location = fetched.headers?.get?.("location")
+        if (!location) {
+          fetched.body?.cancel().catch(() => {})
+          throw new Error(`Failed to fetch ${currentUrl}: HTTP error: ${fetched.status}`)
+        }
+        fetched.body?.cancel().catch(() => {})
+        hopCount += 1
+        currentUrl = new URL(location, currentUrl).toString()
+        continue
+      }
+
+      response = fetched;
+      break;
     }
 
     if (response.url && response.url !== url) {
@@ -143,8 +223,8 @@ export class Fetcher {
     try {
       const response = await this._fetch(requestPayload);
       const text = await this.readResponseText(response);
-      const json = JSON.parse(text);
-      let jsonString = JSON.stringify(json);
+      JSON.parse(text);
+      let jsonString = text;
       
       // Apply length limits
       jsonString = this.applyLengthLimits(
@@ -204,11 +284,11 @@ export class Fetcher {
     videoUrl: string,
     lang: string,
   ): Promise<{ xml: string; lang: string; langName: string }> {
-    if (!/^[a-zA-Z0-9-]+$/.test(lang)) {
-      throw new Error(`Invalid language code: "${lang}". Only letters, digits, and hyphens are allowed.`);
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,9}$/.test(lang)) {
+      throw new Error(`Invalid language code: "${lang}". Must start with a letter or digit, contain only letters, digits, and hyphens, and be at most 10 characters.`);
     }
-    const { execFileSync, execSync } = await import("child_process");
-    const tmpDir = execSync("mktemp -d", { encoding: "utf-8" }).trim();
+    const { execFileSync } = await import("child_process");
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "fetch-mcp-"));
     try {
       execFileSync(
         "yt-dlp",
@@ -221,18 +301,21 @@ export class Fetcher {
         ],
         { encoding: "utf-8", timeout: 30000, stdio: ["pipe", "pipe", "pipe"] },
       );
-      const { readdirSync, readFileSync } = await import("fs");
-      const files = readdirSync(tmpDir).filter((f: string) => f.endsWith(".srv1"));
+      const files = fs.readdirSync(tmpDir).filter((f: string) => f.endsWith(".srv1"));
       if (files.length === 0) {
         throw new Error("yt-dlp did not produce subtitle files");
       }
       const file = files[0];
-      const xml = readFileSync(`${tmpDir}/${file}`, "utf-8");
+      const filePath = `${tmpDir}/${file}`;
+      const size = fs.statSync(filePath).size;
+      if (size > maxResponseBytes) {
+        throw new Error(`Subtitle file too large: ${size} bytes exceeds ${maxResponseBytes} byte limit`);
+      }
+      const xml = fs.readFileSync(filePath, "utf-8");
       const matchedLang = file.match(/\.([^.]+)\.srv1$/)?.[1] ?? lang;
       return { xml, lang: matchedLang, langName: matchedLang };
     } finally {
-      const { rmSync } = await import("fs");
-      rmSync(tmpDir, { recursive: true, force: true });
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   }
 
@@ -249,9 +332,10 @@ export class Fetcher {
     const track =
       tracks.find((t: any) => t.languageCode === lang) ?? tracks[0];
 
-    const captionUrl = track.baseUrl + (track.baseUrl.includes("fmt=") ? "" : "&fmt=srv1");
+    const captionUrl = new URL(track.baseUrl);
+    captionUrl.searchParams.set("fmt", "srv1");
     const captionResponse = await this._fetch({
-      url: captionUrl,
+      url: captionUrl.toString(),
       headers: requestPayload.headers,
       proxy: requestPayload.proxy,
     });
@@ -265,32 +349,40 @@ export class Fetcher {
   }
 
   static hasYtDlp: boolean | null = null;
+  static hasYtDlpAt = 0
+  static checkTtlMs = 60000
 
   static async checkYtDlp(): Promise<boolean> {
-    if (this.hasYtDlp !== null) return this.hasYtDlp;
+    if (this.hasYtDlp !== null && Date.now() - this.hasYtDlpAt < this.checkTtlMs) return this.hasYtDlp;
     try {
-      const { execSync } = await import("child_process");
-      execSync("which yt-dlp", { encoding: "utf-8", stdio: "pipe" });
+      const whichModule = await import("which");
+      await whichModule.default("yt-dlp");
       this.hasYtDlp = true;
     } catch {
       this.hasYtDlp = false;
     }
+    this.hasYtDlpAt = Date.now()
     return this.hasYtDlp;
   }
 
   static async youtubeTranscript(requestPayload: YouTubeTranscriptPayload) {
     try {
+      // Validate before anything consumes the URL (yt-dlp spawn, DNS, fetch)
+      this.validateUrl(requestPayload.url);
       const lang = requestPayload.lang ?? "en";
       let result: { xml: string; lang: string; langName: string };
 
       if (await this.checkYtDlp()) {
         // Validate lang before attempting yt-dlp — this is a security check that must not be swallowed
-        if (!/^[a-zA-Z0-9-]+$/.test(lang)) {
-          throw new Error(`Invalid language code: "${lang}". Only letters, digits, and hyphens are allowed.`);
+        if (!/^[a-zA-Z0-9][a-zA-Z0-9-]{0,9}$/.test(lang)) {
+          throw new Error(`Invalid language code: "${lang}". Must start with a letter or digit, contain only letters, digits, and hyphens, and be at most 10 characters.`);
         }
         try {
           result = await this.fetchTranscriptViaYtDlp(requestPayload.url, lang);
-        } catch {
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          const shortReason = reason.replace(/\s+/g, " ").trim().slice(0, 120);
+          process.stderr.write(`yt-dlp failed (${shortReason}). Falling back to direct transcript extraction.\n`);
           result = await this.fetchTranscriptDirect(requestPayload);
         }
       } else {
@@ -298,6 +390,9 @@ export class Fetcher {
       }
 
       const lines = YouTubeTranscript.parseTranscriptXml(result.xml);
+      if (lines.length === 0) {
+        throw new Error("No transcript captions were found for this video");
+      }
       const header = `[Transcript language: ${result.lang} — ${result.langName}]\n\n`;
       let transcript = header + lines.join("\n");
 

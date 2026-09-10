@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { Fetcher } from "./Fetcher.js";
-import type { RequestPayload, YouTubeTranscriptPayload } from "./types.js";
+import type { RequestPayload } from "./types.js";
 import pkg from "../package.json" with { type: "json" };
 
 const USAGE = `mcp-fetch v${pkg.version}

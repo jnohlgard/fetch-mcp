@@ -1,6 +1,12 @@
-import { describe, it, expect, beforeEach, afterAll, jest, spyOn } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, jest, spyOn } from "bun:test";
 import dns from "node:dns";
-import { Fetcher } from "./Fetcher";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import * as childProcess from "node:child_process";
+import { Fetcher, isPrivateIp } from "./Fetcher";
+import * as FetcherModule from "./Fetcher";
+import { YouTubeTranscriptPayloadSchema } from "./types";
 
 const originalFetch = globalThis.fetch;
 const mockFetch = jest.fn();
@@ -16,6 +22,8 @@ describe("Fetcher", () => {
     jest.clearAllMocks();
     globalThis.fetch = mockFetch as any;
     Fetcher.hasYtDlp = false;
+    Fetcher.hasYtDlpAt = Date.now()
+    Fetcher.checkTtlMs = 60000
     // Default: resolve all hostnames to a public IP so existing tests aren't affected
     dns.promises.lookup = (async () => ({ address: "93.184.216.34", family: 4 })) as any;
   });
@@ -82,6 +90,28 @@ describe("Fetcher", () => {
         content: [{ type: "text", text: JSON.stringify(mockJson) }],
         isError: false,
       });
+    });
+
+    it("returns the original digits for large numbers", async () => {
+      const bigNumberBody = '{"big": 9007199254740993}';
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce(bigNumberBody),
+      });
+
+      const result = await Fetcher.json(mockRequest);
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toContain("9007199254740993");
+    });
+
+    it("still rejects invalid JSON", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce("<html>not json</html>"),
+      });
+
+      const result = await Fetcher.json(mockRequest);
+      expect(result.isError).toBe(true);
     });
 
     it("should handle errors", async () => {
@@ -180,6 +210,47 @@ describe("Fetcher", () => {
     });
   });
 
+  describe("JSDOM script execution guard", () => {
+    // The marker is built from a concatenation so the literal string "PWNED"
+    // never appears in the <script> source itself. If runScripts is ever
+    // enabled on JSDOM, the script executes and the marker appears in the
+    // rendered text, failing both assertions below.
+    const scriptHtml = `
+      <html>
+        <head><title>Guard Page</title></head>
+        <body>
+          <article>
+            <h1>Guard Article</h1>
+            <p>Legitimate article content for the guard check.</p>
+          </article>
+          <script>document.body.textContent += document.title + "PWN" + "ED"</script>
+        </body>
+      </html>
+    `;
+
+    it("txt does not execute inline scripts", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce(scriptHtml),
+      });
+
+      const result = await Fetcher.txt(mockRequest);
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).not.toContain("PWNED");
+    });
+
+    it("readable does not execute inline scripts", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce(scriptHtml),
+      });
+
+      const result = await Fetcher.readable(mockRequest);
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).not.toContain("PWNED");
+    });
+  });
+
   describe("SSRF protection", () => {
     it("should block file:// URLs", async () => {
       const result = await Fetcher.html({ url: "file:///etc/passwd" });
@@ -203,6 +274,22 @@ describe("Fetcher", () => {
       const result = await Fetcher.html({ url: "http://[::1]/" });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("private address");
+    });
+
+    it("should block IPv4-mapped IPv6 addresses in dotted form", async () => {
+      const result = await Fetcher.html({ url: "http://[::ffff:127.0.0.1]/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("should block IPv4-mapped IPv6 addresses in hex form", async () => {
+      const result = await Fetcher.html({ url: "http://[::ffff:7f00:1]/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it("should block redirects to private IPs", async () => {
@@ -229,6 +316,179 @@ describe("Fetcher", () => {
       const result = await Fetcher.html({ url: "https://example.com" });
       expect(result.isError).toBe(false);
       expect(result.content[0].text).toBe("<html>ok</html>");
+    });
+
+    it("validates a redirect target before the hop fires", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 302,
+        headers: new Headers({ location: "http://[::ffff:127.0.0.1]/x" }),
+        text: jest.fn().mockResolvedValueOnce(""),
+      })
+
+      const result = await Fetcher.html({ url: "https://example.com" })
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain("private address")
+      expect(result.content[0].text).not.toContain("Failed to fetch")
+    });
+
+    it("follows a public redirect chain and returns the final content", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: "https://b.example.com/one" }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: "https://c.example.com/final" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce("final content"),
+        })
+
+      const result = await Fetcher.html({ url: "https://example.com/start" })
+      const fetchCalls = mockFetch.mock.calls.map((args) => args[0] as string)
+      mockFetch.mockReset()
+      expect(result.isError).toBe(false)
+      expect(result.content[0].text).toBe("final content")
+      expect(fetchCalls).toEqual([
+        "https://example.com/start",
+        "https://b.example.com/one",
+        "https://c.example.com/final",
+      ])
+    });
+
+    it("rejects an endless redirect loop with a bounded error", async () => {
+      const cycle = ["https://a.example.com/two", "https://a.example.com/one"]
+      for (let i = 0; i < 21; i++) {
+        mockFetch.mockResolvedValueOnce({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: cycle[i % 2] }),
+        })
+      }
+
+      const result = await Fetcher.html({ url: "https://a.example.com/one" })
+      const callCount = mockFetch.mock.calls.length
+      mockFetch.mockReset()
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain("too many redirects")
+      expect(callCount).toBeLessThanOrEqual(21)
+    });
+
+    it("should block CGNAT (100.64.0.0/10) addresses", async () => {
+      const result = await Fetcher.html({ url: "http://100.64.0.1/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("should block Teredo (2001:20::/28) tunnel addresses", async () => {
+      const result = await Fetcher.html({ url: "http://[2001:0020:1234:5678::1]/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("should block 6to4 (2002::/16) tunnel addresses", async () => {
+      const result = await Fetcher.html({ url: "http://[2002:0a00:0001::1]/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("should block NAT64 addresses embedding private IPv4", async () => {
+      const result = await Fetcher.html({ url: "http://[64:ff9b::10.0.0.1]/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("should allow public IPv4-mapped IPv6 addresses", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce("<html>ok</html>"),
+      });
+
+      const result = await Fetcher.html({ url: "http://[::ffff:8.8.8.8]/" });
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toBe("<html>ok</html>");
+    });
+  });
+
+  describe("isPrivateIp", () => {
+    const blocked = [
+      "10.0.0.1",
+      "172.16.0.1",
+      "192.168.1.1",
+      "100.64.0.1",
+      "100.127.255.254",
+      "198.18.0.1",
+      "198.19.255.254",
+      "169.254.169.254",
+      "127.0.0.1",
+      "0.0.0.0",
+      "255.255.255.255",
+      "192.0.0.1",
+      "192.0.2.1",
+      "198.51.100.1",
+      "203.0.113.1",
+      "224.0.0.1",
+      "239.255.255.255",
+      "::",
+      "::1",
+      "::10.0.0.1",
+      "::ffff:10.0.0.1",
+      "::ffff:7f00:1",
+      "::ffff:127.0.0.1",
+      "64:ff9b::10.0.0.1",
+      "64:ff9b::7f00:1",
+      "64:ff9b:1::1",
+      "ff02::1",
+      "fe80::1",
+      "fc00::1",
+      "fd00::1",
+      "100::1",
+      "2001:db8::1",
+      "2002:1::1",
+      "2001:20::1",
+      "2001:0020:1234:5678::1",
+      "2001:3f::1",
+    ];
+
+    const allowed = [
+      "8.8.8.8",
+      "1.1.1.1",
+      "93.184.216.34",
+      "192.0.1.1",
+      "3ffe::1",
+      "2606:4700:4700::1111",
+      "2001:4860:4860::8888",
+      "::ffff:8.8.8.8",
+      "::ffff:808:808",
+      "example.com",
+      "not.an.ip.com",
+      "",
+    ];
+
+    it("blocks private, special-use, and tunneling addresses", () => {
+      for (const ip of blocked) {
+        expect(isPrivateIp(ip), `${ip} should be blocked`).toBe(true);
+      }
+    });
+
+    it("allows global unicast addresses and non-IP input", () => {
+      for (const ip of allowed) {
+        expect(isPrivateIp(ip), `${ip} should be allowed`).toBe(false);
+      }
     });
   });
 
@@ -350,6 +610,158 @@ describe("Fetcher", () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("No caption tracks found");
     });
+
+    it("appends ?fmt=srv1 when the base URL has no query string", async () => {
+      const playerResponse = {
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [
+              {
+                languageCode: "en",
+                baseUrl: "https://www.youtube.com/api/timedtext",
+                name: { simpleText: "English" },
+              },
+            ],
+          },
+        },
+      };
+      const pageHtml = `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></html>`;
+      const captionXml = `<transcript><p t="1234" d="250">hello</p></transcript>`;
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(pageHtml),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(captionXml),
+        });
+
+      const result = await Fetcher.youtubeTranscript({
+        url: "https://www.youtube.com/watch?v=test",
+      });
+
+      expect(result.isError).toBe(false);
+      const captionUrl = mockFetch.mock.calls[1][0] as string;
+      expect(captionUrl.split("?").length - 1).toBe(1);
+      expect(new URL(captionUrl).searchParams.get("fmt")).toBe("srv1");
+    });
+
+    it("does not get confused by a fmt= substring elsewhere", async () => {
+      const playerResponse = {
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [
+              {
+                languageCode: "en",
+                baseUrl: "https://example.com/api/timedtext?lang=en&filter=fmt=x",
+                name: { simpleText: "English" },
+              },
+            ],
+          },
+        },
+      };
+      const pageHtml = `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></html>`;
+      const captionXml = `<transcript><p t="1234" d="250">hello</p></transcript>`;
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(pageHtml),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(captionXml),
+        });
+
+      const result = await Fetcher.youtubeTranscript({
+        url: "https://www.youtube.com/watch?v=test",
+      });
+
+      expect(result.isError).toBe(false);
+      const captionUrl = mockFetch.mock.calls[1][0] as string;
+      expect(new URL(captionUrl).searchParams.get("fmt")).toBe("srv1");
+    });
+
+    it("returns an error when no captions parse", async () => {
+      const playerResponse = {
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [
+              {
+                languageCode: "en",
+                baseUrl: "https://www.youtube.com/api/timedtext?lang=en",
+                name: { simpleText: "English" },
+              },
+            ],
+          },
+        },
+      };
+      const pageHtml = `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></html>`;
+      const captionXml = `<transcript></transcript>`;
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(pageHtml),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(captionXml),
+        });
+
+      const result = await Fetcher.youtubeTranscript({
+        url: "https://www.youtube.com/watch?v=test",
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("No transcript captions were found");
+    });
+  });
+
+  describe("youtubeTranscript URL validation", () => {
+    const nonHttpUrls = [
+      "file:///etc/passwd",
+      "ftp://example.com/file",
+      "rtmp://example.com/live",
+    ];
+    let execFileSyncSpy: ReturnType<typeof spyOn>;
+
+    beforeAll(() => {
+      execFileSyncSpy = spyOn(childProcess, "execFileSync");
+    });
+
+    beforeEach(() => {
+      execFileSyncSpy.mockClear();
+    });
+
+    afterAll(() => {
+      execFileSyncSpy.mockRestore();
+    });
+
+    it("never spawns yt-dlp for non-http(s) URLs", async () => {
+      for (const url of nonHttpUrls) {
+        Fetcher.hasYtDlp = true;
+
+        const result = await Fetcher.youtubeTranscript({ url });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("disallowed protocol");
+        expect(execFileSyncSpy).not.toHaveBeenCalled();
+      }
+    });
+
+    it("zod schema rejects non-http(s) URLs", () => {
+      for (const url of nonHttpUrls) {
+        expect(YouTubeTranscriptPayloadSchema.safeParse({ url }).success).toBe(false);
+      }
+      expect(
+        YouTubeTranscriptPayloadSchema.safeParse({
+          url: "https://www.youtube.com/watch?v=abc123",
+        }).success,
+      ).toBe(true);
+    });
   });
 
   describe("DNS rebinding SSRF protection", () => {
@@ -398,9 +810,70 @@ describe("Fetcher", () => {
       expect(result.isError).toBe(false);
       lookupSpy.mockRestore();
     });
+
+    it("should block hostnames that resolve to CGNAT addresses", async () => {
+      const lookupSpy = spyOn(dns.promises, "lookup").mockResolvedValueOnce({
+        address: "100.64.0.1",
+        family: 4,
+      } as any);
+
+      const result = await Fetcher.html({ url: "https://evil.example.com" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("resolved to private IP");
+      lookupSpy.mockRestore();
+    });
   });
 
   describe("yt-dlp lang sanitization", () => {
+    const flagLikeLangs = ["-o", "--sub-format", "--skip-download"];
+    let execFileSyncSpy: ReturnType<typeof spyOn>;
+
+    beforeAll(() => {
+      execFileSyncSpy = spyOn(childProcess, "execFileSync");
+    });
+
+    beforeEach(() => {
+      execFileSyncSpy.mockClear();
+    });
+
+    afterAll(() => {
+      execFileSyncSpy.mockRestore();
+    });
+
+    it("rejects flag-like lang values without invoking yt-dlp", async () => {
+      for (const lang of flagLikeLangs) {
+        Fetcher.hasYtDlp = true;
+
+        const result = await Fetcher.youtubeTranscript({
+          url: "https://www.youtube.com/watch?v=abc123",
+          lang,
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("Invalid language code");
+        expect(execFileSyncSpy).not.toHaveBeenCalled();
+      }
+    });
+
+    it("passes BCP-47 codes like es-419 and zh-Hans through validation", async () => {
+      for (const lang of ["es-419", "zh-Hans"]) {
+        Fetcher.hasYtDlp = true;
+        execFileSyncSpy.mockImplementationOnce(() => {
+          throw new Error("yt-dlp failed");
+        });
+        mockFetch.mockRejectedValueOnce(new Error("Network error"));
+
+        const result = await Fetcher.youtubeTranscript({
+          url: "https://www.youtube.com/watch?v=abc123",
+          lang,
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).not.toContain("Invalid language code");
+        expect(execFileSyncSpy).toHaveBeenCalled();
+      }
+    });
+
     it("should reject lang with shell metacharacters", async () => {
       Fetcher.hasYtDlp = true;
 
@@ -484,18 +957,177 @@ describe("Fetcher", () => {
     });
   });
 
-  describe("checkYtDlp", () => {
-    it("should return a promise (async)", () => {
-      Fetcher.hasYtDlp = null;
-      const result = Fetcher.checkYtDlp();
-      expect(result).toBeInstanceOf(Promise);
+  describe("yt-dlp portability", () => {
+    const originalStderrWrite = process.stderr.write;
+    let stderrLines: string[] = [];
+    let execFileSyncSpy: ReturnType<typeof spyOn>;
+
+    const srv1 = '<p t="1234" d="250">hello</p>';
+
+    beforeAll(() => {
+      execFileSyncSpy = spyOn(childProcess, "execFileSync").mockImplementation(
+        (_file: string, args: string[] = []) => {
+          const outIndex = args.indexOf("-o");
+          const outputTemplate = args[outIndex + 1];
+          const dir = path.dirname(outputTemplate);
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(`${dir}/sub.en.srv1`, srv1, "utf-8");
+          return "";
+        },
+      );
     });
 
-    it("should return cached value when already checked", async () => {
-      Fetcher.hasYtDlp = true;
-      const result = await Fetcher.checkYtDlp();
-      expect(result).toBe(true);
+    beforeEach(() => {
+      execFileSyncSpy.mockClear();
+      stderrLines = [];
+      process.stderr.write = ((s: string) => {
+        for (const line of s.split("\n")) {
+          if (line.length > 0) stderrLines.push(line);
+        }
+        return true;
+      }) as any;
     });
+
+    afterAll(() => {
+      execFileSyncSpy.mockRestore();
+      process.stderr.write = originalStderrWrite;
+    });
+
+    it("produces the transcript when yt-dlp succeeds", async () => {
+      Fetcher.hasYtDlp = true;
+
+      const result = await Fetcher.youtubeTranscript({
+        url: "https://www.youtube.com/watch?v=abc123",
+      });
+
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toContain("hello");
+    });
+
+    it("reports on stderr when yt-dlp fails and it falls back to direct extraction", async () => {
+      Fetcher.hasYtDlp = true;
+      execFileSyncSpy.mockImplementation(() => {
+        throw new Error("boom: yt-dlp crashed");
+      });
+
+      const playerResponse = {
+        captions: {
+          playerCaptionsTracklistRenderer: {
+            captionTracks: [{ languageCode: "en", baseUrl: "https://youtube.com/api/timedtext?lang=en", name: { simpleText: "English" } }],
+          },
+        },
+      };
+      const pageHtml = `<html><script>var ytInitialPlayerResponse = ${JSON.stringify(playerResponse)};</script></html>`;
+      const captionXml = `<transcript><text start="0" dur="2">Fallback line</text></transcript>`;
+      mockFetch
+        .mockResolvedValueOnce({ ok: true, text: jest.fn().mockResolvedValueOnce(pageHtml) })
+        .mockResolvedValueOnce({ ok: true, text: jest.fn().mockResolvedValueOnce(captionXml) });
+
+      const result = await Fetcher.youtubeTranscript({
+        url: "https://www.youtube.com/watch?v=abc123",
+      });
+
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toContain("Fallback line");
+      expect(stderrLines).toHaveLength(1);
+      expect(stderrLines[0]).toContain("yt-dlp");
+      expect(stderrLines[0]).toMatch(/falling back to direct transcript extraction/i);
+    });
+  });
+
+  describe("checkYtDlp", () => {
+    const originalPath = process.env.PATH
+    let emptyDir: string
+    let withYtDlpDir: string
+
+    beforeAll(() => {
+      emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), "fetch-mcp-probe-empty-"))
+      withYtDlpDir = fs.mkdtempSync(path.join(os.tmpdir(), "fetch-mcp-probe-which-"))
+      fs.writeFileSync(path.join(withYtDlpDir, "yt-dlp"), "#!/bin/sh\necho yt-dlp\n", "utf-8")
+      fs.chmodSync(path.join(withYtDlpDir, "yt-dlp"), 0o755)
+    })
+
+    afterEach(() => {
+      process.env.PATH = originalPath
+    })
+
+    afterAll(() => {
+      fs.rmSync(emptyDir, { recursive: true, force: true })
+      fs.rmSync(withYtDlpDir, { recursive: true, force: true })
+    })
+
+    const clearCache = () => {
+      Fetcher.hasYtDlp = null
+      Fetcher.hasYtDlpAt = 0
+      Fetcher.checkTtlMs = 0
+    }
+
+    it("should return a promise (async)", async () => {
+      clearCache()
+      const result = Fetcher.checkYtDlp()
+      expect(result).toBeInstanceOf(Promise)
+      await result
+    })
+
+    it("should return cached value when already checked", async () => {
+      Fetcher.hasYtDlp = true
+      const result = await Fetcher.checkYtDlp()
+      expect(result).toBe(true)
+    })
+
+    it("rechecks once the cached answer is stale", async () => {
+      process.env.PATH = emptyDir
+      clearCache()
+      const first = await Fetcher.checkYtDlp()
+      process.env.PATH = `${withYtDlpDir}${path.delimiter}${originalPath ?? ""}`
+      const second = await Fetcher.checkYtDlp()
+      expect(first).toBe(false)
+      expect(second).toBe(true)
+    })
+
+    it("finds yt-dlp on PATH without spawning any process", async () => {
+      const execSyncSpy = spyOn(childProcess, "execSync")
+      const execSpy = spyOn(childProcess, "exec")
+      const spawnSpy = spyOn(childProcess, "spawn")
+      process.env.PATH = `${withYtDlpDir}${path.delimiter}${originalPath ?? ""}`
+      clearCache()
+
+      const result = await Fetcher.checkYtDlp()
+
+      expect(result).toBe(true)
+      expect(execSyncSpy).not.toHaveBeenCalled()
+      expect(execSpy).not.toHaveBeenCalled()
+      expect(spawnSpy).not.toHaveBeenCalled()
+      execSyncSpy.mockRestore()
+      execSpy.mockRestore()
+      spawnSpy.mockRestore()
+    })
+
+    it("returns false when yt-dlp is not on PATH", async () => {
+      process.env.PATH = emptyDir
+      clearCache()
+      const result = await Fetcher.checkYtDlp()
+      expect(result).toBe(false)
+    })
+
+    it("does not probe while the cache is fresh", async () => {
+      const execSyncSpy = spyOn(childProcess, "execSync")
+      const execSpy = spyOn(childProcess, "exec")
+      const spawnSpy = spyOn(childProcess, "spawn")
+      Fetcher.hasYtDlp = true
+      Fetcher.hasYtDlpAt = Date.now()
+      Fetcher.checkTtlMs = 60000
+
+      const result = await Fetcher.checkYtDlp()
+
+      expect(result).toBe(true)
+      expect(execSyncSpy).not.toHaveBeenCalled()
+      expect(execSpy).not.toHaveBeenCalled()
+      expect(spawnSpy).not.toHaveBeenCalled()
+      execSyncSpy.mockRestore()
+      execSpy.mockRestore()
+      spawnSpy.mockRestore()
+    })
   });
 
   describe("response size limit", () => {
@@ -567,6 +1199,44 @@ describe("Fetcher", () => {
       expect(result.isError).toBe(true);
       expect(typeof result.content[0].text).toBe("string");
       expect(result.content[0].text).toBe("string error");
+    });
+  });
+
+  describe("surrogate safety", () => {
+    const body = "abc🙂def";
+
+    const hasLoneSurrogate = (text: string) =>
+      Array.from(text).some((ch) => {
+        const code = ch.codePointAt(0) ?? 0;
+        return code >= 0xd800 && code <= 0xdfff
+      });
+
+    it("does not split an emoji when max_length ends mid-pair", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce(body),
+      });
+
+      const result = await Fetcher.html({ url: "https://example.com", max_length: 4 });
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toBe(Array.from(body).slice(0, 4).join(""));
+      expect(hasLoneSurrogate(result.content[0].text)).toBe(false);
+    });
+
+    it("does not split an emoji when start_index begins mid-pair", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce(body),
+      });
+
+      const result = await Fetcher.html({
+        url: "https://example.com",
+        max_length: 0,
+        start_index: 4,
+      });
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toBe(Array.from(body).slice(4).join(""));
+      expect(hasLoneSurrogate(result.content[0].text)).toBe(false);
     });
   });
 });

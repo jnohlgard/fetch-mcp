@@ -1,10 +1,37 @@
 export class YouTubeTranscript {
   static extractPlayerResponse(html: string): unknown {
-    const match = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\});/s);
-    if (!match) {
-      throw new Error("Could not find ytInitialPlayerResponse in page HTML");
+    const marker = /ytInitialPlayerResponse\s*=\s*\{/.exec(html)
+    if (!marker) {
+      throw new Error("Could not find ytInitialPlayerResponse in page HTML")
     }
-    return JSON.parse(match[1]);
+    const start = marker.index + marker[0].length - 1
+    let depth = 0
+    let inString = false
+    let escaped = false
+    for (let i = start; i < html.length; i++) {
+      const ch = html[i]
+      if (inString) {
+        if (escaped) {
+          escaped = false
+        } else if (ch === "\\") {
+          escaped = true
+        } else if (ch === '"') {
+          inString = false
+        }
+        continue
+      }
+      if (ch === '"') {
+        inString = true
+      } else if (ch === "{") {
+        depth++
+      } else if (ch === "}") {
+        depth--
+        if (depth === 0) {
+          return JSON.parse(html.slice(start, i + 1))
+        }
+      }
+    }
+    throw new Error("unbalanced braces in ytInitialPlayerResponse")
   }
 
   static getCaptionTracks(playerResponse: any): any[] {
@@ -22,16 +49,23 @@ export class YouTubeTranscript {
       .replace(/&lt;/g, "<")
       .replace(/&gt;/g, ">")
       .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'");
+      .replace(/&#39;/g, "'")
+      .replace(/&apos;/g, "'")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&#(\d+);/g, (_match, code: string) => String.fromCodePoint(Number(code)))
+      .replace(
+        /&#x([0-9a-fA-F]+);/g,
+        (_match, code: string) => String.fromCodePoint(parseInt(code, 16)),
+      );
   }
 
   static parseTranscriptXml(xml: string): string[] {
     const lines: string[] = [];
 
     // Format 1: <text start="X" dur="Y">content</text>
-    const textRegex = /<text\s+start="([^"]+)"[^>]*>([\s\S]*?)<\/text>/g;
+    const textRegex = /<text\b([^>]*)>([\s\S]*?)<\/text>/g;
     // Format 2: <p t="X" d="Y">content</p>
-    const pRegex = /<p\s+t="(\d+)"[^>]*>([\s\S]*?)<\/p>/g;
+    const pRegex = /<p\b([^>]*)>([\s\S]*?)<\/p>/g;
 
     let match: RegExpExecArray | null;
 
@@ -40,7 +74,11 @@ export class YouTubeTranscript {
       // Reset and use format 1
       textRegex.lastIndex = 0;
       while ((match = textRegex.exec(xml)) !== null) {
-        const seconds = parseFloat(match[1]);
+        const startAttr = match[1].match(/\bstart="([^"]+)"/);
+        if (!startAttr) {
+          continue;
+        }
+        const seconds = parseFloat(startAttr[1]);
         const content = this.decodeHtmlEntities(match[2].replace(/<[^>]+>/g, "").trim());
         if (content) {
           lines.push(`[${this.formatTimestamp(seconds)}] ${content}`);
@@ -49,7 +87,11 @@ export class YouTubeTranscript {
     } else {
       // Try format 2
       while ((match = pRegex.exec(xml)) !== null) {
-        const ms = parseInt(match[1], 10);
+        const tAttr = match[1].match(/\bt="(\d+)"/);
+        if (!tAttr) {
+          continue;
+        }
+        const ms = parseInt(tAttr[1], 10);
         const seconds = ms / 1000;
         const content = this.decodeHtmlEntities(match[2].replace(/<[^>]+>/g, "").trim());
         if (content) {
