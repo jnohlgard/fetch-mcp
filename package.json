@@ -28,6 +28,7 @@
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
     "test": "bun test",
+    "typecheck": "tsc --noEmit",
     "publish:npm": "bun run build && bun test && npm publish"
   },
   "bin": {
@@ -60,6 +61,7 @@
     "@types/bun": "latest",
     "@types/jsdom": "^30.0.0",
     "@types/mozilla__readability": "^0.4.2",
-    "@types/turndown": "^5.0.6"
+    "@types/turndown": "^5.0.6",
+    "typescript": "^7.0.2"
   }
 }
