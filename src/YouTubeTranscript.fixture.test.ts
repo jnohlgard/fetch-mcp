@@ -58,6 +58,8 @@ const originalFetch = globalThis.fetch;
 describe("YouTubeTranscript — fixture tests", () => {
   beforeEach(() => {
     dns.promises.lookup = (async () => ({ address: "93.184.216.34", family: 4 })) as any;
+    Fetcher.hasYtDlpAt = Date.now()
+    Fetcher.checkTtlMs = 60000
   });
 
   afterEach(() => {

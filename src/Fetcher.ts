@@ -314,9 +314,11 @@ export class Fetcher {
   }
 
   static hasYtDlp: boolean | null = null;
+  static hasYtDlpAt = 0
+  static checkTtlMs = 60000
 
   static async checkYtDlp(): Promise<boolean> {
-    if (this.hasYtDlp !== null) return this.hasYtDlp;
+    if (this.hasYtDlp !== null && Date.now() - this.hasYtDlpAt < this.checkTtlMs) return this.hasYtDlp;
     try {
       const { execSync } = await import("child_process");
       const probe = process.platform === "win32" ? "where yt-dlp" : "which yt-dlp";
@@ -325,6 +327,7 @@ export class Fetcher {
     } catch {
       this.hasYtDlp = false;
     }
+    this.hasYtDlpAt = Date.now()
     return this.hasYtDlp;
   }
 

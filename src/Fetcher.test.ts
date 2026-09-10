@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, beforeAll, afterAll, jest, spyOn } from "bun:test";
+import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, jest, spyOn } from "bun:test";
 import dns from "node:dns";
 import fs from "node:fs";
 import path from "node:path";
@@ -21,6 +21,8 @@ describe("Fetcher", () => {
     jest.clearAllMocks();
     globalThis.fetch = mockFetch as any;
     Fetcher.hasYtDlp = false;
+    Fetcher.hasYtDlpAt = Date.now()
+    Fetcher.checkTtlMs = 60000
     // Default: resolve all hostnames to a public IP so existing tests aren't affected
     dns.promises.lookup = (async () => ({ address: "93.184.216.34", family: 4 })) as any;
   });
@@ -823,6 +825,22 @@ describe("Fetcher", () => {
   });
 
   describe("checkYtDlp", () => {
+    let execSyncSpy: ReturnType<typeof spyOn>
+
+    beforeAll(() => {
+      execSyncSpy = spyOn(childProcess, "execSync").mockImplementation(() => {
+        throw new Error("yt-dlp not found")
+      })
+    })
+
+    afterEach(() => {
+      execSyncSpy.mockClear()
+    })
+
+    afterAll(() => {
+      execSyncSpy.mockRestore()
+    })
+
     it("should return a promise (async)", () => {
       Fetcher.hasYtDlp = null;
       const result = Fetcher.checkYtDlp();
@@ -834,6 +852,31 @@ describe("Fetcher", () => {
       const result = await Fetcher.checkYtDlp();
       expect(result).toBe(true);
     });
+
+    it("rechecks once the cached answer is stale", async () => {
+      Fetcher.hasYtDlp = null
+      Fetcher.hasYtDlpAt = 0
+      Fetcher.checkTtlMs = 0
+      execSyncSpy.mockImplementation(() => {
+        if (execSyncSpy.mock.calls.length === 1) {
+          throw new Error("yt-dlp not found")
+        }
+        return "/usr/bin/yt-dlp\n"
+      })
+      const first = await Fetcher.checkYtDlp()
+      const second = await Fetcher.checkYtDlp()
+      expect(first).toBe(false)
+      expect(second).toBe(true)
+    })
+
+    it("does not re-spawn while the cache is fresh", async () => {
+      Fetcher.hasYtDlp = true
+      Fetcher.hasYtDlpAt = Date.now()
+      Fetcher.checkTtlMs = 60000
+      const result = await Fetcher.checkYtDlp()
+      expect(result).toBe(true)
+      expect(execSyncSpy).not.toHaveBeenCalled()
+    })
   });
 
   describe("response size limit", () => {
