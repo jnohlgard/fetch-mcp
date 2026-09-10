@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as childProcess from "node:child_process";
-import { Fetcher } from "./Fetcher";
+import { Fetcher, isPrivateIp } from "./Fetcher";
 import * as FetcherModule from "./Fetcher";
 import { YouTubeTranscriptPayloadSchema } from "./types";
 
@@ -379,6 +379,49 @@ describe("Fetcher", () => {
       expect(result.content[0].text).toContain("too many redirects")
       expect(callCount).toBeLessThanOrEqual(21)
     });
+
+    it("should block CGNAT (100.64.0.0/10) addresses", async () => {
+      const result = await Fetcher.html({ url: "http://100.64.0.1/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("should block Teredo (2001:20::/28) tunnel addresses", async () => {
+      const result = await Fetcher.html({ url: "http://[2001:0020:1234:5678::1]/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("should block 6to4 (2002::/16) tunnel addresses", async () => {
+      const result = await Fetcher.html({ url: "http://[2002:0a00:0001::1]/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("should block NAT64 addresses embedding private IPv4", async () => {
+      const result = await Fetcher.html({ url: "http://[64:ff9b::10.0.0.1]/" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("private address");
+      expect(result.content[0].text).not.toContain("Failed to fetch");
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it("should allow public IPv4-mapped IPv6 addresses", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce("<html>ok</html>"),
+      });
+
+      const result = await Fetcher.html({ url: "http://[::ffff:8.8.8.8]/" });
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toBe("<html>ok</html>");
+    });
   });
 
   describe("toIpv4IfMapped", () => {
@@ -405,6 +448,74 @@ describe("Fetcher", () => {
       expect(toMapped()("::")).toBe("::");
       expect(toMapped()("8.8.8.8")).toBe("8.8.8.8");
       expect(toMapped()("example.com")).toBe("example.com");
+    });
+  });
+
+  describe("isPrivateIp", () => {
+    const blocked = [
+      "10.0.0.1",
+      "172.16.0.1",
+      "192.168.1.1",
+      "100.64.0.1",
+      "100.127.255.254",
+      "198.18.0.1",
+      "198.19.255.254",
+      "169.254.169.254",
+      "127.0.0.1",
+      "0.0.0.0",
+      "255.255.255.255",
+      "192.0.0.1",
+      "192.0.2.1",
+      "198.51.100.1",
+      "203.0.113.1",
+      "224.0.0.1",
+      "239.255.255.255",
+      "::",
+      "::1",
+      "::10.0.0.1",
+      "::ffff:10.0.0.1",
+      "::ffff:7f00:1",
+      "::ffff:127.0.0.1",
+      "64:ff9b::10.0.0.1",
+      "64:ff9b::7f00:1",
+      "64:ff9b:1::1",
+      "ff02::1",
+      "fe80::1",
+      "fc00::1",
+      "fd00::1",
+      "100::1",
+      "2001:db8::1",
+      "2002:1::1",
+      "2001:20::1",
+      "2001:0020:1234:5678::1",
+      "2001:3f::1",
+    ];
+
+    const allowed = [
+      "8.8.8.8",
+      "1.1.1.1",
+      "93.184.216.34",
+      "192.0.1.1",
+      "3ffe::1",
+      "2606:4700:4700::1111",
+      "2001:4860:4860::8888",
+      "::ffff:8.8.8.8",
+      "::ffff:808:808",
+      "example.com",
+      "not.an.ip.com",
+      "",
+    ];
+
+    it("blocks private, special-use, and tunneling addresses", () => {
+      for (const ip of blocked) {
+        expect(isPrivateIp(ip), `${ip} should be blocked`).toBe(true);
+      }
+    });
+
+    it("allows global unicast addresses and non-IP input", () => {
+      for (const ip of allowed) {
+        expect(isPrivateIp(ip), `${ip} should be allowed`).toBe(false);
+      }
     });
   });
 
@@ -724,6 +835,18 @@ describe("Fetcher", () => {
 
       const result = await Fetcher.html({ url: "https://example.com" });
       expect(result.isError).toBe(false);
+      lookupSpy.mockRestore();
+    });
+
+    it("should block hostnames that resolve to CGNAT addresses", async () => {
+      const lookupSpy = spyOn(dns.promises, "lookup").mockResolvedValueOnce({
+        address: "100.64.0.1",
+        family: 4,
+      } as any);
+
+      const result = await Fetcher.html({ url: "https://evil.example.com" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("resolved to private IP");
       lookupSpy.mockRestore();
     });
   });
