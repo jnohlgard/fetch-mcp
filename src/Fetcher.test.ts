@@ -275,6 +275,68 @@ describe("Fetcher", () => {
       expect(result.isError).toBe(false);
       expect(result.content[0].text).toBe("<html>ok</html>");
     });
+
+    it("validates a redirect target before the hop fires", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 302,
+        headers: new Headers({ location: "http://[::ffff:127.0.0.1]/x" }),
+        text: jest.fn().mockResolvedValueOnce(""),
+      })
+
+      const result = await Fetcher.html({ url: "https://example.com" })
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain("private address")
+      expect(result.content[0].text).not.toContain("Failed to fetch")
+    });
+
+    it("follows a public redirect chain and returns the final content", async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: "https://b.example.com/one" }),
+        })
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: "https://c.example.com/final" }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce("final content"),
+        })
+
+      const result = await Fetcher.html({ url: "https://example.com/start" })
+      const fetchCalls = mockFetch.mock.calls.map((args) => args[0] as string)
+      mockFetch.mockReset()
+      expect(result.isError).toBe(false)
+      expect(result.content[0].text).toBe("final content")
+      expect(fetchCalls).toEqual([
+        "https://example.com/start",
+        "https://b.example.com/one",
+        "https://c.example.com/final",
+      ])
+    });
+
+    it("rejects an endless redirect loop with a bounded error", async () => {
+      const cycle = ["https://a.example.com/two", "https://a.example.com/one"]
+      for (let i = 0; i < 21; i++) {
+        mockFetch.mockResolvedValueOnce({
+          ok: false,
+          status: 302,
+          headers: new Headers({ location: cycle[i % 2] }),
+        })
+      }
+
+      const result = await Fetcher.html({ url: "https://a.example.com/one" })
+      const callCount = mockFetch.mock.calls.length
+      mockFetch.mockReset()
+      expect(result.isError).toBe(true)
+      expect(result.content[0].text).toContain("too many redirects")
+      expect(callCount).toBeLessThanOrEqual(21)
+    });
   });
 
   describe("toIpv4IfMapped", () => {

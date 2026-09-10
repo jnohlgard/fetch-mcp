@@ -100,25 +100,61 @@ export class Fetcher {
     headers,
     proxy,
   }: RequestPayload): Promise<Response> {
-    this.validateUrl(url);
-    await this.validateResolvedIp(url);
+    const maxRedirectHops = 20;
+    let currentUrl = url;
+    let hopCount = 0;
     let response: Response;
-    try {
-      response = await fetch(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          ...headers,
-        },
-        // Note: proxy is a Bun-specific fetch option. On Node.js, this option is silently ignored.
-        // To use a proxy on Node.js, you would need an HTTP agent library like http-proxy-agent.
-        ...(proxy ? { proxy } : {}),
-      } as RequestInit);
-    } catch (e: unknown) {
-      if (e instanceof Error) {
-        throw new Error(`Failed to fetch ${url}: ${e.message}`);
+
+    for (;;) {
+      this.validateUrl(currentUrl);
+      await this.validateResolvedIp(currentUrl);
+
+      let fetched: Response
+      try {
+        fetched = await fetch(currentUrl, {
+          headers: {
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            ...headers,
+          },
+          redirect: "manual",
+          // Note: proxy is a Bun-specific fetch option. On Node.js, this option is silently ignored.
+          // To use a proxy on Node.js, you would need an HTTP agent library like http-proxy-agent.
+          ...(proxy ? { proxy } : {}),
+        } as RequestInit);
+      } catch (e: unknown) {
+        if (e instanceof Error) {
+          throw new Error(`Failed to fetch ${currentUrl}: ${e.message}`);
+        }
+        throw new Error(`Failed to fetch ${currentUrl}: Unknown error`);
       }
-      throw new Error(`Failed to fetch ${url}: Unknown error`);
+
+      if (
+        fetched.status === 301 ||
+        fetched.status === 302 ||
+        fetched.status === 303 ||
+        fetched.status === 307 ||
+        fetched.status === 308
+      ) {
+        if (hopCount >= maxRedirectHops) {
+          fetched.body?.cancel().catch(() => {})
+          throw new Error(
+            `Failed to fetch ${url}: too many redirects (exceeded ${maxRedirectHops} hops)`,
+          )
+        }
+        const location = fetched.headers?.get?.("location")
+        if (!location) {
+          fetched.body?.cancel().catch(() => {})
+          throw new Error(`Failed to fetch ${currentUrl}: HTTP error: ${fetched.status}`)
+        }
+        fetched.body?.cancel().catch(() => {})
+        hopCount += 1
+        currentUrl = new URL(location, currentUrl).toString()
+        continue
+      }
+
+      response = fetched;
+      break;
     }
 
     if (response.url && response.url !== url) {
