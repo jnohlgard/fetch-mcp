@@ -25,6 +25,16 @@ export type RequestPayload = {
   proxy?: string;
 };
 
+export const ReadablePayloadSchema = RequestPayloadSchema.extend({
+  fallback: z.enum(["markdown", "txt", "none"]).optional().default("none"),
+});
+
+export type ReadablePayload = RequestPayload & {
+  /** When Readability cannot extract an article: return the whole page as
+   *  "markdown" or "txt", or "none" (the default) to fail with an error. */
+  fallback?: "markdown" | "txt" | "none";
+};
+
 export const YouTubeTranscriptPayloadSchema = z.object({
   url: z
     .string()

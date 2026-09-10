@@ -6,7 +6,7 @@ import dns from "node:dns";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { RequestPayload, YouTubeTranscriptPayload, TextToolResult, downloadLimit, maxResponseBytes } from "./types.js";
+import { RequestPayload, ReadablePayload, YouTubeTranscriptPayload, TextToolResult, downloadLimit, maxResponseBytes } from "./types.js";
 import { YouTubeTranscript } from "./YouTubeTranscript.js";
 
 // Allowlist-style SSRF check: only IANA "global unicast" addresses pass.
@@ -318,21 +318,24 @@ export class Fetcher {
     }
   }
 
+  private static htmlToPlainText(html: string): string {
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+
+    const scripts = document.getElementsByTagName("script");
+    const styles = document.getElementsByTagName("style");
+    Array.from(scripts).forEach((script) => script.remove());
+    Array.from(styles).forEach((style) => style.remove());
+
+    return (document.body.textContent || "").replace(/\s+/g, " ").trim();
+  }
+
   static async txt(requestPayload: RequestPayload): Promise<TextToolResult> {
     try {
       const response = await this._fetch(requestPayload);
       const html = await this.readResponseText(response);
 
-      const dom = new JSDOM(html);
-      const document = dom.window.document;
-
-      const scripts = document.getElementsByTagName("script");
-      const styles = document.getElementsByTagName("style");
-      Array.from(scripts).forEach((script) => script.remove());
-      Array.from(styles).forEach((style) => style.remove());
-
-      const text = document.body.textContent || "";
-      let normalizedText = text.replace(/\s+/g, " ").trim();
+      let normalizedText = this.htmlToPlainText(html);
       
       // Apply length limits
       normalizedText = this.applyLengthLimits(
@@ -486,7 +489,7 @@ export class Fetcher {
     }
   }
 
-  static async readable(requestPayload: RequestPayload): Promise<TextToolResult> {
+  static async readable(requestPayload: ReadablePayload): Promise<TextToolResult> {
     try {
       const response = await this._fetch(requestPayload);
       const html = await this.readResponseText(response);
@@ -495,12 +498,18 @@ export class Fetcher {
       const reader = new Readability(dom.window.document);
       const article = reader.parse();
 
-      if (!article) {
+      let content: string;
+      if (article) {
+        content = new TurndownService().turndown(article.content ?? "");
+      } else if (requestPayload.fallback === "markdown") {
+        // No article detected: fall back to the whole page as Markdown.
+        content = new TurndownService().turndown(html);
+      } else if (requestPayload.fallback === "txt") {
+        // No article detected: fall back to the whole page as plain text.
+        content = this.htmlToPlainText(html);
+      } else {
         throw new Error("Failed to parse readable content from the page");
       }
-
-      const turndownService = new TurndownService();
-      let content = turndownService.turndown(article.content ?? "");
 
       content = this.applyLengthLimits(
         content,

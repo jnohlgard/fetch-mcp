@@ -2,7 +2,7 @@
 
 import { Server, type ListToolsResult } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
-import { RequestPayloadSchema, YouTubeTranscriptPayloadSchema } from "./types.js";
+import { RequestPayloadSchema, ReadablePayloadSchema, YouTubeTranscriptPayloadSchema } from "./types.js";
 import { Fetcher } from "./Fetcher.js";
 import process from "process";
 import { downloadLimit } from "./types.js";
@@ -175,6 +175,11 @@ export function createFetchServer(): Server {
                 type: "string",
                 description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
               },
+              fallback: {
+                type: "string",
+                enum: ["markdown", "txt", "none"],
+                description: "What to return when Readability cannot extract an article: 'markdown' or 'txt' for the whole page converted to that format, 'none' (default) to fail with an error",
+              },
             },
             required: ["url"],
           },
@@ -232,13 +237,16 @@ export function createFetchServer(): Server {
       throw new Error(`Tool not found: ${name}`);
     }
 
+    if (name === "fetch_readable") {
+      return Fetcher.readable(ReadablePayloadSchema.parse(args));
+    }
+
     const validatedArgs = RequestPayloadSchema.parse(args);
 
     if (name === "fetch_html") return Fetcher.html(validatedArgs);
     if (name === "fetch_json") return Fetcher.json(validatedArgs);
     if (name === "fetch_txt") return Fetcher.txt(validatedArgs);
-    if (name === "fetch_markdown") return Fetcher.markdown(validatedArgs);
-    return Fetcher.readable(validatedArgs);
+    return Fetcher.markdown(validatedArgs);
   });
 
   return server;

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, jest, spyOn } from "bun:test";
+import { Readability } from "@mozilla/readability";
 import dns from "node:dns";
 import fs from "node:fs";
 import os from "node:os";
@@ -199,6 +200,60 @@ describe("Fetcher", () => {
       const result = await Fetcher.readable(mockRequest);
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("Failed to parse readable content");
+    });
+
+    it("falls back to whole-page markdown when fallback is 'markdown'", async () => {
+      const parseSpy = spyOn(Readability.prototype, "parse").mockReturnValue(null);
+      try {
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(
+            "<html><body><h1>Full page</h1><p>Whole page content.</p></body></html>"
+          ),
+        });
+
+        const result = await Fetcher.readable({ ...mockRequest, fallback: "markdown" });
+        expect(result.isError).toBe(false);
+        expect(result.content[0].text).toContain("Full page");
+      } finally {
+        parseSpy.mockRestore();
+      }
+    });
+
+    it("falls back to whole-page plain text when fallback is 'txt'", async () => {
+      const parseSpy = spyOn(Readability.prototype, "parse").mockReturnValue(null);
+      try {
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(
+            "<html><body><h1>Full page</h1><p>Whole page content.</p></body></html>"
+          ),
+        });
+
+        const result = await Fetcher.readable({ ...mockRequest, fallback: "txt" });
+        expect(result.isError).toBe(false);
+        expect(result.content[0].text).toContain("Whole page content.");
+      } finally {
+        parseSpy.mockRestore();
+      }
+    });
+
+    it("still errors when Readability cannot parse and fallback is 'none'", async () => {
+      const parseSpy = spyOn(Readability.prototype, "parse").mockReturnValue(null);
+      try {
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce(
+            "<html><body><p>content</p></body></html>"
+          ),
+        });
+
+        const result = await Fetcher.readable({ ...mockRequest, fallback: "none" });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("Failed to parse readable content");
+      } finally {
+        parseSpy.mockRestore();
+      }
     });
 
     it("should handle fetch errors", async () => {

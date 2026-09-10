@@ -32,7 +32,7 @@ All tools accept the following common parameters:
 
 - **fetch_json** — Fetch a URL and return the JSON response.
 
-- **fetch_readable** — Fetch a website and extract the main article content using [Mozilla Readability](https://github.com/mozilla/readability), returned as Markdown. Strips navigation, ads, and boilerplate. Ideal for articles and blog posts.
+- **fetch_readable** — Fetch a website and extract the main article content using [Mozilla Readability](https://github.com/mozilla/readability), returned as Markdown. Strips navigation, ads, and boilerplate. Ideal for articles and blog posts. Accepts an optional `fallback` parameter (`"markdown"`, `"txt"`, or `"none"`, default `"none"`): when no article can be extracted, the whole page is returned in the fallback format instead of an error.
 
 - **fetch_youtube_transcript** — Fetch a YouTube video's captions/transcript. Uses `yt-dlp` if available, otherwise extracts directly from the page. Accepts an additional `lang` parameter (default: `"en"`) to select the caption language.
 
