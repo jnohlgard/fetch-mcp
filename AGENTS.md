@@ -1,12 +1,12 @@
 # AGENTS.md
 
-MCP server + CLI in TypeScript (Bun dev, Node runtime) for fetching web content as HTML/Markdown/text/JSON/article/YouTube transcript.
+MCP server + CLI in TypeScript (Bun dev, Node 20+ runtime) for fetching web content as HTML/Markdown/text/JSON/article/YouTube transcript.
 
 ## Commands
 
 ```bash
 bun install   # ALWAYS first on a fresh checkout (bun.lock is gitignored; tests fail without it)
-bun test      # bun:test, 6 files in src/, 124 tests
+bun test      # bun:test, 7 files in src/, 131 tests
 bun run build # bundles to dist/ (only quality gate besides tests; no lint/CI)
 ```
 
