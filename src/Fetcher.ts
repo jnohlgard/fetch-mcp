@@ -284,7 +284,19 @@ export class Fetcher {
     try {
       const response = await this._fetch(requestPayload);
       const text = await this.readResponseText(response);
-      JSON.parse(text);
+
+      try {
+        JSON.parse(text);
+      } catch {
+        // JSON.parse's own error only points at the first bad character;
+        // the content-type usually tells the caller what actually came back
+        // (e.g. an HTML error page instead of JSON).
+        const contentType = response.headers?.get("content-type") ?? "unknown";
+        throw new Error(
+          `Failed to fetch ${requestPayload.url}: response is not valid JSON (content-type: ${contentType})`
+        );
+      }
+
       let jsonString = text;
       
       // Apply length limits

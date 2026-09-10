@@ -104,14 +104,31 @@ describe("Fetcher", () => {
       expect(result.content[0].text).toContain("9007199254740993");
     });
 
-    it("still rejects invalid JSON", async () => {
+    it("still rejects invalid JSON and reports the content-type", async () => {
       mockFetch.mockResolvedValueOnce({
         ok: true,
+        headers: { get: jest.fn().mockReturnValue("text/html; charset=utf-8") },
         text: jest.fn().mockResolvedValueOnce("<html>not json</html>"),
       });
 
       const result = await Fetcher.json(mockRequest);
       expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe(
+        "Failed to fetch https://example.com: response is not valid JSON (content-type: text/html; charset=utf-8)"
+      );
+    });
+
+    it("still rejects invalid JSON when no content-type header is present", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce("not json at all"),
+      });
+
+      const result = await Fetcher.json(mockRequest);
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toBe(
+        "Failed to fetch https://example.com: response is not valid JSON (content-type: unknown)"
+      );
     });
 
     it("should handle errors", async () => {
