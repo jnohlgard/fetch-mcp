@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      # Keep the packages doing the actual parsing/validation work in their
+      # own PRs so upgrades to them are reviewed deliberately.
+      jsdom:
+        patterns:
+          - "jsdom"
+          - "@types/jsdom"
+      readability:
+        patterns:
+          - "@mozilla/readability"
+          - "@types/mozilla__readability"
+      ip-address:
+        patterns:
+          - "ip-address"
