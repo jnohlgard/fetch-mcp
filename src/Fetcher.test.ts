@@ -907,4 +907,42 @@ describe("Fetcher", () => {
       expect(result.content[0].text).toBe("string error");
     });
   });
+
+  describe("surrogate safety", () => {
+    const body = "abc🙂def";
+
+    const hasLoneSurrogate = (text: string) =>
+      Array.from(text).some((ch) => {
+        const code = ch.codePointAt(0) ?? 0;
+        return code >= 0xd800 && code <= 0xdfff
+      });
+
+    it("does not split an emoji when max_length ends mid-pair", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce(body),
+      });
+
+      const result = await Fetcher.html({ url: "https://example.com", max_length: 4 });
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toBe(Array.from(body).slice(0, 4).join(""));
+      expect(hasLoneSurrogate(result.content[0].text)).toBe(false);
+    });
+
+    it("does not split an emoji when start_index begins mid-pair", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce(body),
+      });
+
+      const result = await Fetcher.html({
+        url: "https://example.com",
+        max_length: 0,
+        start_index: 4,
+      });
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toBe(Array.from(body).slice(4).join(""));
+      expect(hasLoneSurrogate(result.content[0].text)).toBe(false);
+    });
+  });
 });

@@ -37,6 +37,23 @@ export class Fetcher {
     }
 
     const end = maxLength > 0 ? Math.min(startIndex + maxLength, text.length) : text.length;
+
+    const splitsPair = (index: number): boolean => {
+      if (index === 0 || index >= text.length) {
+        return false;
+      }
+      const code = text.charCodeAt(index);
+      if (code < 0xdc00 || code > 0xdfff) {
+        return false;
+      }
+      const prev = text.charCodeAt(index - 1);
+      return prev >= 0xd800 && prev <= 0xdbff;
+    };
+
+    if (splitsPair(startIndex) || splitsPair(end)) {
+      return Array.from(text).slice(startIndex, end).join("");
+    }
+
     return text.substring(startIndex, end);
   }
 
