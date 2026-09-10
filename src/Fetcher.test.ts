@@ -17,6 +17,7 @@ const originalLookup = dns.promises.lookup;
 afterAll(() => {
   globalThis.fetch = originalFetch;
   dns.promises.lookup = originalLookup;
+  delete process.env.FETCH_LOGGING;
 });
 
 describe("Fetcher", () => {
@@ -27,6 +28,9 @@ describe("Fetcher", () => {
     Fetcher.hasYtDlpAt = Date.now()
     Fetcher.checkTtlMs = 60000
     Fetcher.fetchRateLimiter = createFetchRateLimiter();
+    // Keep per-request logging out of test output; individual logging tests
+    // enable it explicitly.
+    process.env.FETCH_LOGGING = "0";
     // Default: resolve all hostnames to a public IP so existing tests aren't affected
     dns.promises.lookup = (async () => ({ address: "93.184.216.34", family: 4 })) as any;
   });
@@ -319,6 +323,88 @@ describe("Fetcher", () => {
       const result = await Fetcher.txt(mockRequest);
       expect(result.isError).toBe(false);
       expect(result.content[0].text).toContain("quick page");
+    });
+  });
+
+  describe("request logging", () => {
+    const originalStderrWrite = process.stderr.write;
+    let lines: string[] = [];
+
+    beforeEach(() => {
+      lines = [];
+      process.stderr.write = ((s: string) => {
+        for (const line of String(s).split("\n")) {
+          if (line.length > 0) lines.push(line);
+        }
+        return true;
+      }) as any;
+    });
+
+    afterEach(() => {
+      process.stderr.write = originalStderrWrite;
+    });
+
+    it("writes a structured line with host, status, and duration, never the path or headers", async () => {
+      process.env.FETCH_LOGGING = "1";
+      try {
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: {
+            get: (name: string) => (name === "content-length" ? "4242" : null),
+          },
+          text: jest.fn().mockResolvedValueOnce("<html>ok</html>"),
+        });
+
+        const result = await Fetcher.html({
+          url: "https://example.com/secret-path?q=token",
+          headers: { Authorization: "Bearer supersecret" },
+        });
+
+        expect(result.isError).toBe(false);
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain("host=example.com");
+        expect(lines[0]).toContain("status=200");
+        expect(lines[0]).toContain("bytes=4242");
+        expect(lines[0]).toMatch(/ms=\d+/);
+        expect(lines[0]).not.toContain("secret-path");
+        expect(lines[0]).not.toContain("token");
+        expect(lines[0]).not.toContain("Authorization");
+        expect(lines[0]).not.toContain("supersecret");
+      } finally {
+        delete process.env.FETCH_LOGGING;
+      }
+    });
+
+    it("logs the status for non-2xx responses too", async () => {
+      process.env.FETCH_LOGGING = "1";
+      try {
+        mockFetch.mockResolvedValueOnce({ ok: false, status: 404 });
+
+        const result = await Fetcher.html(mockRequest);
+        expect(result.isError).toBe(true);
+        expect(lines).toHaveLength(1);
+        expect(lines[0]).toContain("status=404");
+      } finally {
+        delete process.env.FETCH_LOGGING;
+      }
+    });
+
+    it("stays silent when FETCH_LOGGING is off", async () => {
+      process.env.FETCH_LOGGING = "0";
+      try {
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          text: jest.fn().mockResolvedValueOnce("<html>ok</html>"),
+        });
+
+        const result = await Fetcher.html(mockRequest);
+        expect(result.isError).toBe(false);
+        expect(lines).toHaveLength(0);
+      } finally {
+        delete process.env.FETCH_LOGGING;
+      }
     });
   });
 

@@ -123,6 +123,7 @@ mcp-fetch json https://api.example.com/data --proxy http://proxy:8080
 | `FETCH_CAPTION_TIMEOUT_MS` | Timeout for the auxiliary YouTube caption fetch (default: `10000` / 10 s) |
 | `MAX_CONCURRENT_FETCHES` | Max concurrent outbound fetches in this process; extra requests queue until a slot frees up (default: `10`, set to `0` for unlimited) |
 | `PARSE_TIMEOUT_MS` | Deadline for HTML parsing (jsdom/Readability/Turndown) in `fetch_txt`/`fetch_readable` in milliseconds; a clear error is returned when parsing outlives the deadline (default: `10000` / 10 s) |
+| `FETCH_LOGGING` | Structured per-request log line on stderr (host, status, duration, bytes) for correlating agent behavior with egress; only the host is ever logged, never the URL path, query, or headers (default: on, set to `0` to disable) |
 
 Example with a custom limit:
 
@@ -152,6 +153,7 @@ Example with a custom limit:
 - Credential headers (`Authorization`, `Cookie`, `Proxy-Authorization`) are stripped from redirect hops that cross to a different origin
 - Response size limits to prevent memory exhaustion
 - Per-request timeouts (30 s per redirect hop, 10 s for the YouTube caption fetch) so a hung or slowloris connection cannot block a request indefinitely
+- Structured per-request logging on stderr (host, status, duration, bytes) for correlating agent behavior with cluster egress; only the host is ever logged, never the URL path, query, or headers
 
 ## Development
 

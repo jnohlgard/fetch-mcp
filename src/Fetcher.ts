@@ -67,6 +67,17 @@ function getParseTimeoutMs(): number {
   return timeoutFromEnv("PARSE_TIMEOUT_MS", DEFAULT_PARSE_TIMEOUT_MS);
 }
 
+// Structured per-request logging on stderr (stdout belongs to the MCP
+// protocol). On by default so operators can correlate agent behavior with
+// cluster egress; FETCH_LOGGING=0 disables it. Read per call like the timeout
+// vars.
+function isFetchLoggingEnabled(): boolean {
+  const raw = process.env.FETCH_LOGGING;
+  if (raw === undefined || raw === "") return true;
+  const normalized = raw.trim().toLowerCase();
+  return normalized !== "0" && normalized !== "false";
+}
+
 // Credential-bearing headers that must not follow a request across an origin
 // boundary, matching browser/fetch redirect semantics.
 const CREDENTIAL_HEADERS = new Set(["authorization", "cookie", "proxy-authorization"]);
@@ -155,6 +166,7 @@ export class Fetcher {
     proxy,
   }: RequestPayload, timeoutMs?: number): Promise<Response> {
     const maxRedirectHops = 20;
+    const startedAt = Date.now();
     let currentUrl = url;
     let currentHeaders = headers;
     let hopCount = 0;
@@ -248,15 +260,47 @@ export class Fetcher {
     }
 
     if (!response.ok) {
+      this.logFetchOutcome(url, response, startedAt);
       throw new Error(`Failed to fetch ${url}: HTTP error: ${response.status}`);
     }
 
     const contentLength = response.headers?.get?.("content-length");
     if (contentLength && parseInt(contentLength, 10) > maxResponseBytes) {
+      this.logFetchOutcome(url, response, startedAt);
       throw new Error(`Response too large: ${contentLength} bytes exceeds ${maxResponseBytes} byte limit`);
     }
 
+    this.logFetchOutcome(url, response, startedAt);
     return response;
+  }
+
+  // One structured line per fetch outcome on stderr. Only the host is logged -
+  // never the path, query, or headers - so the log can be correlated with
+  // cluster egress metrics without leaking credentials. Bytes come from
+  // content-length when the server advertises it.
+  private static logFetchOutcome(requestUrl: string, response: Response, startedAt: number): void {
+    if (!isFetchLoggingEnabled()) return;
+
+    let finalUrl = requestUrl;
+    if (response.url) {
+      try {
+        finalUrl = new URL(response.url).toString();
+      } catch {
+        // malformed redirect target; fall back to the requested URL
+      }
+    }
+    let host = "unknown";
+    try {
+      host = new URL(finalUrl).host;
+    } catch {
+      // validated URLs never reach this; keep "unknown"
+    }
+
+    const parts = [`[fetch-mcp] fetch host=${host}`, `ms=${Date.now() - startedAt}`];
+    if (typeof response.status === "number") parts.push(`status=${response.status}`);
+    const contentLength = response.headers?.get?.("content-length");
+    if (contentLength && /^\d+$/.test(contentLength)) parts.push(`bytes=${contentLength}`);
+    process.stderr.write(`${parts.join(" ")}\n`);
   }
 
   private static async readResponseText(response: Response): Promise<string> {
