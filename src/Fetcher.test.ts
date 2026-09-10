@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, beforeAll, afterAll, jest, spyOn } from "bun:test";
 import dns from "node:dns";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import * as childProcess from "node:child_process";
 import { Fetcher } from "./Fetcher";
@@ -950,57 +951,97 @@ describe("Fetcher", () => {
   });
 
   describe("checkYtDlp", () => {
-    let execSyncSpy: ReturnType<typeof spyOn>
+    const originalPath = process.env.PATH
+    let emptyDir: string
+    let withYtDlpDir: string
 
     beforeAll(() => {
-      execSyncSpy = spyOn(childProcess, "execSync").mockImplementation(() => {
-        throw new Error("yt-dlp not found")
-      })
+      emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), "fetch-mcp-probe-empty-"))
+      withYtDlpDir = fs.mkdtempSync(path.join(os.tmpdir(), "fetch-mcp-probe-which-"))
+      fs.writeFileSync(path.join(withYtDlpDir, "yt-dlp"), "#!/bin/sh\necho yt-dlp\n", "utf-8")
+      fs.chmodSync(path.join(withYtDlpDir, "yt-dlp"), 0o755)
     })
 
     afterEach(() => {
-      execSyncSpy.mockClear()
+      process.env.PATH = originalPath
     })
 
     afterAll(() => {
-      execSyncSpy.mockRestore()
+      fs.rmSync(emptyDir, { recursive: true, force: true })
+      fs.rmSync(withYtDlpDir, { recursive: true, force: true })
     })
 
-    it("should return a promise (async)", () => {
-      Fetcher.hasYtDlp = null;
-      const result = Fetcher.checkYtDlp();
-      expect(result).toBeInstanceOf(Promise);
-    });
-
-    it("should return cached value when already checked", async () => {
-      Fetcher.hasYtDlp = true;
-      const result = await Fetcher.checkYtDlp();
-      expect(result).toBe(true);
-    });
-
-    it("rechecks once the cached answer is stale", async () => {
+    const clearCache = () => {
       Fetcher.hasYtDlp = null
       Fetcher.hasYtDlpAt = 0
       Fetcher.checkTtlMs = 0
-      execSyncSpy.mockImplementation(() => {
-        if (execSyncSpy.mock.calls.length === 1) {
-          throw new Error("yt-dlp not found")
-        }
-        return "/usr/bin/yt-dlp\n"
-      })
+    }
+
+    it("should return a promise (async)", async () => {
+      clearCache()
+      const result = Fetcher.checkYtDlp()
+      expect(result).toBeInstanceOf(Promise)
+      await result
+    })
+
+    it("should return cached value when already checked", async () => {
+      Fetcher.hasYtDlp = true
+      const result = await Fetcher.checkYtDlp()
+      expect(result).toBe(true)
+    })
+
+    it("rechecks once the cached answer is stale", async () => {
+      process.env.PATH = emptyDir
+      clearCache()
       const first = await Fetcher.checkYtDlp()
+      process.env.PATH = `${withYtDlpDir}${path.delimiter}${originalPath ?? ""}`
       const second = await Fetcher.checkYtDlp()
       expect(first).toBe(false)
       expect(second).toBe(true)
     })
 
-    it("does not re-spawn while the cache is fresh", async () => {
+    it("finds yt-dlp on PATH without spawning any process", async () => {
+      const execSyncSpy = spyOn(childProcess, "execSync")
+      const execSpy = spyOn(childProcess, "exec")
+      const spawnSpy = spyOn(childProcess, "spawn")
+      process.env.PATH = `${withYtDlpDir}${path.delimiter}${originalPath ?? ""}`
+      clearCache()
+
+      const result = await Fetcher.checkYtDlp()
+
+      expect(result).toBe(true)
+      expect(execSyncSpy).not.toHaveBeenCalled()
+      expect(execSpy).not.toHaveBeenCalled()
+      expect(spawnSpy).not.toHaveBeenCalled()
+      execSyncSpy.mockRestore()
+      execSpy.mockRestore()
+      spawnSpy.mockRestore()
+    })
+
+    it("returns false when yt-dlp is not on PATH", async () => {
+      process.env.PATH = emptyDir
+      clearCache()
+      const result = await Fetcher.checkYtDlp()
+      expect(result).toBe(false)
+    })
+
+    it("does not probe while the cache is fresh", async () => {
+      const execSyncSpy = spyOn(childProcess, "execSync")
+      const execSpy = spyOn(childProcess, "exec")
+      const spawnSpy = spyOn(childProcess, "spawn")
       Fetcher.hasYtDlp = true
       Fetcher.hasYtDlpAt = Date.now()
       Fetcher.checkTtlMs = 60000
+
       const result = await Fetcher.checkYtDlp()
+
       expect(result).toBe(true)
       expect(execSyncSpy).not.toHaveBeenCalled()
+      expect(execSpy).not.toHaveBeenCalled()
+      expect(spawnSpy).not.toHaveBeenCalled()
+      execSyncSpy.mockRestore()
+      execSpy.mockRestore()
+      spawnSpy.mockRestore()
     })
   });
 

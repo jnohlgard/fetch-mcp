@@ -356,9 +356,8 @@ export class Fetcher {
   static async checkYtDlp(): Promise<boolean> {
     if (this.hasYtDlp !== null && Date.now() - this.hasYtDlpAt < this.checkTtlMs) return this.hasYtDlp;
     try {
-      const { execSync } = await import("child_process");
-      const probe = process.platform === "win32" ? "where yt-dlp" : "which yt-dlp";
-      execSync(probe, { encoding: "utf-8", stdio: "pipe" });
+      const whichModule = await import("which");
+      await whichModule.default("yt-dlp");
       this.hasYtDlp = true;
     } catch {
       this.hasYtDlp = false;
