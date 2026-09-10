@@ -209,6 +209,47 @@ describe("Fetcher", () => {
     });
   });
 
+  describe("JSDOM script execution guard", () => {
+    // The marker is built from a concatenation so the literal string "PWNED"
+    // never appears in the <script> source itself. If runScripts is ever
+    // enabled on JSDOM, the script executes and the marker appears in the
+    // rendered text, failing both assertions below.
+    const scriptHtml = `
+      <html>
+        <head><title>Guard Page</title></head>
+        <body>
+          <article>
+            <h1>Guard Article</h1>
+            <p>Legitimate article content for the guard check.</p>
+          </article>
+          <script>document.body.textContent += document.title + "PWN" + "ED"</script>
+        </body>
+      </html>
+    `;
+
+    it("txt does not execute inline scripts", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce(scriptHtml),
+      });
+
+      const result = await Fetcher.txt(mockRequest);
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).not.toContain("PWNED");
+    });
+
+    it("readable does not execute inline scripts", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce(scriptHtml),
+      });
+
+      const result = await Fetcher.readable(mockRequest);
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).not.toContain("PWNED");
+    });
+  });
+
   describe("SSRF protection", () => {
     it("should block file:// URLs", async () => {
       const result = await Fetcher.html({ url: "file:///etc/passwd" });
