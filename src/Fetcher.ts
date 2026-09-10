@@ -57,6 +57,16 @@ function getCaptionTimeoutMs(): number {
   return timeoutFromEnv("FETCH_CAPTION_TIMEOUT_MS", DEFAULT_CAPTION_TIMEOUT_MS);
 }
 
+// HTML parsing (jsdom/Readability/Turndown) is synchronous and can burn CPU on
+// pathological pages even under the byte-size cap. PARSE_TIMEOUT_MS bounds the
+// async-yielding parse paths and produces a clear error at the deadline; a
+// worker-based hard kill is a larger change tracked separately.
+const DEFAULT_PARSE_TIMEOUT_MS = 10000;
+
+function getParseTimeoutMs(): number {
+  return timeoutFromEnv("PARSE_TIMEOUT_MS", DEFAULT_PARSE_TIMEOUT_MS);
+}
+
 // Credential-bearing headers that must not follow a request across an origin
 // boundary, matching browser/fetch redirect semantics.
 const CREDENTIAL_HEADERS = new Set(["authorization", "cookie", "proxy-authorization"]);
@@ -331,6 +341,26 @@ export class Fetcher {
     }
   }
 
+  // Runs parse work against a deadline. The work runs on a microtask, so fast
+  // synchronous parses always win; anything that yields to the event loop
+  // (async-yielding parse, or a future async worker) loses to the timer and
+  // surfaces a clear error instead of hanging the tool call.
+  private static async withParseDeadline<T>(work: () => T | Promise<T>): Promise<T> {
+    const timeoutMs = getParseTimeoutMs();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`parsing timed out after ${timeoutMs}ms`)),
+        timeoutMs
+      );
+    });
+    try {
+      return await Promise.race([Promise.resolve().then(work), deadline]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
   private static htmlToPlainText(html: string): string {
     const dom = new JSDOM(html);
     const document = dom.window.document;
@@ -348,7 +378,7 @@ export class Fetcher {
       const response = await this._fetch(requestPayload);
       const html = await this.readResponseText(response);
 
-      let normalizedText = this.htmlToPlainText(html);
+      let normalizedText = await this.withParseDeadline(() => this.htmlToPlainText(html));
       
       // Apply length limits
       normalizedText = this.applyLengthLimits(
@@ -502,27 +532,37 @@ export class Fetcher {
     }
   }
 
+  // Runs the Readability/fallback extraction pipeline. Kept as a seam so
+  // callers can run it against a parse deadline (see withParseDeadline).
+  private static parseReadable(
+    html: string,
+    url: string,
+    fallback?: "markdown" | "txt" | "none"
+  ): string {
+    const dom = new JSDOM(html, { url });
+    const reader = new Readability(dom.window.document);
+    const article = reader.parse();
+
+    if (article) {
+      return new TurndownService().turndown(article.content ?? "");
+    } else if (fallback === "markdown") {
+      // No article detected: fall back to the whole page as Markdown.
+      return new TurndownService().turndown(html);
+    } else if (fallback === "txt") {
+      // No article detected: fall back to the whole page as plain text.
+      return this.htmlToPlainText(html);
+    }
+    throw new Error("Failed to parse readable content from the page");
+  }
+
   static async readable(requestPayload: ReadablePayload): Promise<TextToolResult> {
     try {
       const response = await this._fetch(requestPayload);
       const html = await this.readResponseText(response);
 
-      const dom = new JSDOM(html, { url: requestPayload.url });
-      const reader = new Readability(dom.window.document);
-      const article = reader.parse();
-
-      let content: string;
-      if (article) {
-        content = new TurndownService().turndown(article.content ?? "");
-      } else if (requestPayload.fallback === "markdown") {
-        // No article detected: fall back to the whole page as Markdown.
-        content = new TurndownService().turndown(html);
-      } else if (requestPayload.fallback === "txt") {
-        // No article detected: fall back to the whole page as plain text.
-        content = this.htmlToPlainText(html);
-      } else {
-        throw new Error("Failed to parse readable content from the page");
-      }
+      let content = await this.withParseDeadline(() =>
+        this.parseReadable(html, requestPayload.url, requestPayload.fallback)
+      );
 
       content = this.applyLengthLimits(
         content,

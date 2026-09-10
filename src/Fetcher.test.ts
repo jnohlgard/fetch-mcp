@@ -267,6 +267,61 @@ describe("Fetcher", () => {
     });
   });
 
+  describe("parse timeout", () => {
+    it("fails txt with a clear error when HTML parsing exceeds PARSE_TIMEOUT_MS", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce("<html><body>content</body></html>"),
+      });
+      const original = process.env.PARSE_TIMEOUT_MS;
+      process.env.PARSE_TIMEOUT_MS = "10";
+      const spy = spyOn(Fetcher, "htmlToPlainText").mockReturnValue(
+        new Promise((resolve) => setTimeout(() => resolve("late"), 50)) as any
+      );
+      try {
+        const result = await Fetcher.txt(mockRequest);
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("parsing timed out after 10ms");
+      } finally {
+        spy.mockRestore();
+        if (original === undefined) delete process.env.PARSE_TIMEOUT_MS;
+        else process.env.PARSE_TIMEOUT_MS = original;
+      }
+    });
+
+    it("fails readable with a clear error when extraction exceeds PARSE_TIMEOUT_MS", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce("<html><body>content</body></html>"),
+      });
+      const original = process.env.PARSE_TIMEOUT_MS;
+      process.env.PARSE_TIMEOUT_MS = "10";
+      const spy = spyOn(Fetcher, "parseReadable").mockReturnValue(
+        new Promise((resolve) => setTimeout(() => resolve("late"), 50)) as any
+      );
+      try {
+        const result = await Fetcher.readable(mockRequest);
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("parsing timed out after 10ms");
+      } finally {
+        spy.mockRestore();
+        if (original === undefined) delete process.env.PARSE_TIMEOUT_MS;
+        else process.env.PARSE_TIMEOUT_MS = original;
+      }
+    });
+
+    it("completes normally when parsing finishes before the deadline", async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        text: jest.fn().mockResolvedValueOnce("<html><body>quick page</body></html>"),
+      });
+
+      const result = await Fetcher.txt(mockRequest);
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toContain("quick page");
+    });
+  });
+
   describe("markdown", () => {
     it("should handle errors", async () => {
       mockFetch.mockRejectedValueOnce(new Error("Conversion error"));

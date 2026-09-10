@@ -122,6 +122,7 @@ mcp-fetch json https://api.example.com/data --proxy http://proxy:8080
 | `FETCH_TIMEOUT_MS` | Per-request timeout in milliseconds. Each redirect hop gets its own budget (default: `30000` / 30 s) |
 | `FETCH_CAPTION_TIMEOUT_MS` | Timeout for the auxiliary YouTube caption fetch (default: `10000` / 10 s) |
 | `MAX_CONCURRENT_FETCHES` | Max concurrent outbound fetches in this process; extra requests queue until a slot frees up (default: `10`, set to `0` for unlimited) |
+| `PARSE_TIMEOUT_MS` | Deadline for HTML parsing (jsdom/Readability/Turndown) in `fetch_txt`/`fetch_readable` in milliseconds; a clear error is returned when parsing outlives the deadline (default: `10000` / 10 s) |
 
 Example with a custom limit:
 
