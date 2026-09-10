@@ -13,3 +13,9 @@ Known limitation (by design, pre-check only): the DNS lookup and the fetch's own
 - `MAX_RESPONSE_BYTES` (default 10 MB, read once at import in `types.ts`): checked via `content-length` pre-check and per-chunk counting in `readResponseText` (reader cancelled in `finally`).
 - `DEFAULT_LIMIT` (default 5000): default for `max_length`; embedded in tool descriptions and CLI usage text. **`max_length: 0` means unlimited** (`applyLengthLimits` only truncates when `maxLength > 0`) — tests use `0` to get full content.
 - Both env vars are parsed once at import time (module-level consts in `types.ts`): changes require a process restart, and tests that set them must do so before importing `types`.
+
+## Timeouts
+
+- `_fetch` applies a deadline to every `fetch()` via an `AbortController`: default 30 s (`FETCH_TIMEOUT_MS`). The deadline is **per redirect hop** — a fresh timer is started and cleared on each hop — so a hung or slowloris connection cannot block a request indefinitely, and the chain's worst-case total time is bounded by `maxRedirectHops` times the per-hop budget. (Chosen over a single deadline across the whole chain so each hop's validation and the timeout stay symmetric; the hop cap already bounds the chain length.) On expiry the in-flight request is aborted and the call fails with `Failed to fetch {url}: timed out after {N}ms`.
+- The auxiliary YouTube caption fetch in `fetchTranscriptDirect` uses a separate, shorter default of 10 s (`FETCH_CAPTION_TIMEOUT_MS`).
+- Unlike `MAX_RESPONSE_BYTES`/`DEFAULT_LIMIT`, both timeout vars are read **per call** (not once at import), so a running server or a test can change them without a restart.

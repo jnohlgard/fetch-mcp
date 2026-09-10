@@ -518,6 +518,71 @@ describe("Fetcher", () => {
     });
   });
 
+  describe("fetch timeout", () => {
+    // A mock fetch that hangs until its AbortSignal fires, then rejects with an
+    // AbortError — this mirrors real fetch/undici behavior so the AbortController
+    // path in _fetch is genuinely exercised rather than stubbed away.
+    function hangUntilAbort(_url: string, init?: RequestInit): Promise<Response> {
+      return new Promise((resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          const err = new Error("The operation was aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    }
+
+    it("times out a hung request with a clear error", async () => {
+      process.env.FETCH_TIMEOUT_MS = "20";
+      try {
+        mockFetch.mockImplementationOnce(hangUntilAbort);
+        const result = await Fetcher.html({ url: "https://example.com" });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toBe(
+          "Failed to fetch https://example.com: timed out after 20ms",
+        );
+      } finally {
+        delete process.env.FETCH_TIMEOUT_MS;
+      }
+    });
+
+    it("completes a fast request before the timeout fires", async () => {
+      process.env.FETCH_TIMEOUT_MS = "50";
+      try {
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          text: jest.fn().mockResolvedValueOnce("<html>quick</html>"),
+        });
+        const result = await Fetcher.html({ url: "https://example.com" });
+        expect(result.isError).toBe(false);
+        expect(result.content[0].text).toBe("<html>quick</html>");
+      } finally {
+        delete process.env.FETCH_TIMEOUT_MS;
+      }
+    });
+
+    it("gives each redirect hop a fresh timeout budget", async () => {
+      process.env.FETCH_TIMEOUT_MS = "20";
+      try {
+        // First hop redirects (its timer is cleared on completion); the second
+        // hop hangs and hits its own, fresh 20ms budget.
+        mockFetch
+          .mockResolvedValueOnce({
+            ok: false,
+            status: 302,
+            headers: new Headers({ location: "https://b.example.com/next" }),
+          })
+          .mockImplementationOnce(hangUntilAbort);
+        const result = await Fetcher.html({ url: "https://example.com/start" });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain("timed out after 20ms");
+        expect(mockFetch).toHaveBeenCalledTimes(2);
+      } finally {
+        delete process.env.FETCH_TIMEOUT_MS;
+      }
+    });
+  });
+
   describe("youtubeTranscript", () => {
     it("should fetch and parse YouTube transcript", async () => {
       const playerResponse = {

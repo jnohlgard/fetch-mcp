@@ -117,6 +117,8 @@ mcp-fetch json https://api.example.com/data --proxy http://proxy:8080
 |----------|-------------|
 | `DEFAULT_LIMIT` | Default character limit for responses (default: `5000`, set to `0` for no limit) |
 | `MAX_RESPONSE_BYTES` | Maximum response body size in bytes (default: `10485760` / 10 MB) |
+| `FETCH_TIMEOUT_MS` | Per-request timeout in milliseconds. Each redirect hop gets its own budget (default: `30000` / 30 s) |
+| `FETCH_CAPTION_TIMEOUT_MS` | Timeout for the auxiliary YouTube caption fetch (default: `10000` / 10 s) |
 
 Example with a custom limit:
 
@@ -144,6 +146,7 @@ Example with a custom limit:
 - Custom request headers
 - SSRF protection (blocks private/localhost addresses, IPv4-mapped IPv6 addresses, DNS-rebinding to private IPs on the first resolution, and every redirect hop before it fires)
 - Response size limits to prevent memory exhaustion
+- Per-request timeouts (30 s per redirect hop, 10 s for the YouTube caption fetch) so a hung or slowloris connection cannot block a request indefinitely
 
 ## Development
 

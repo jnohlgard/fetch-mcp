@@ -33,6 +33,29 @@ export function isPrivateIp(ip: string): boolean {
   return false;
 }
 
+// Per-request timeout (ms). A hung or slowloris connection must never block a
+// fetch indefinitely. FETCH_TIMEOUT_MS overrides the 30s default and is read per
+// call (not once at import) so tests and short-lived processes can tune it
+// without a restart.
+const DEFAULT_FETCH_TIMEOUT_MS = 30000;
+// The auxiliary YouTube caption fetch gets its own, shorter budget.
+const DEFAULT_CAPTION_TIMEOUT_MS = 10000;
+
+function timeoutFromEnv(envVar: string, fallback: number): number {
+  const raw = process.env[envVar];
+  if (raw === undefined || raw === "") return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function getFetchTimeoutMs(): number {
+  return timeoutFromEnv("FETCH_TIMEOUT_MS", DEFAULT_FETCH_TIMEOUT_MS);
+}
+
+function getCaptionTimeoutMs(): number {
+  return timeoutFromEnv("FETCH_CAPTION_TIMEOUT_MS", DEFAULT_CAPTION_TIMEOUT_MS);
+}
+
 export class Fetcher {
   private static applyLengthLimits(text: string, maxLength: number, startIndex: number): string {
     if (startIndex >= text.length) {
@@ -100,7 +123,7 @@ export class Fetcher {
     url,
     headers,
     proxy,
-  }: RequestPayload): Promise<Response> {
+  }: RequestPayload, timeoutMs?: number): Promise<Response> {
     const maxRedirectHops = 20;
     let currentUrl = url;
     let hopCount = 0;
@@ -109,6 +132,14 @@ export class Fetcher {
     for (;;) {
       this.validateUrl(currentUrl);
       await this.validateResolvedIp(currentUrl);
+
+      // Each redirect hop gets its own timeout budget so a hung/slowloris
+      // connection can never block a request indefinitely. The chain is
+      // separately bounded by maxRedirectHops, so worst-case total wall-clock
+      // time is maxRedirectHops times the per-hop timeout.
+      const hopTimeoutMs = timeoutMs ?? getFetchTimeoutMs();
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), hopTimeoutMs);
 
       let fetched: Response
       try {
@@ -119,15 +150,21 @@ export class Fetcher {
             ...headers,
           },
           redirect: "manual",
+          signal: controller.signal,
           // Note: proxy is a Bun-specific fetch option. On Node.js, this option is silently ignored.
           // To use a proxy on Node.js, you would need an HTTP agent library like http-proxy-agent.
           ...(proxy ? { proxy } : {}),
         } as RequestInit);
       } catch (e: unknown) {
+        if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) {
+          throw new Error(`Failed to fetch ${currentUrl}: timed out after ${hopTimeoutMs}ms`);
+        }
         if (e instanceof Error) {
           throw new Error(`Failed to fetch ${currentUrl}: ${e.message}`);
         }
         throw new Error(`Failed to fetch ${currentUrl}: Unknown error`);
+      } finally {
+        clearTimeout(timer);
       }
 
       if (
@@ -334,11 +371,13 @@ export class Fetcher {
 
     const captionUrl = new URL(track.baseUrl);
     captionUrl.searchParams.set("fmt", "srv1");
+    // The caption fetch is a small, auxiliary request, so it gets its own
+    // shorter deadline than the initial page fetch above.
     const captionResponse = await this._fetch({
       url: captionUrl.toString(),
       headers: requestPayload.headers,
       proxy: requestPayload.proxy,
-    });
+    }, getCaptionTimeoutMs());
 
     const xml = await this.readResponseText(captionResponse);
     return {
