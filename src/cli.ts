@@ -36,6 +36,25 @@ export interface ParsedArgs {
   lang?: string;
 }
 
+// Shared value validators for the two shapes of flags: non-negative integers
+// and plain strings (a following "--" or missing value is an error).
+function setIntFlag(result: ParsedArgs, field: "maxLength" | "startIndex", flag: string, value: string | undefined): void {
+  const parsed = parseInt(value ?? "", 10);
+  if (isNaN(parsed) || parsed < 0) {
+    process.stderr.write(`${flag} requires a non-negative integer\n`);
+    process.exit(1);
+  }
+  result[field] = parsed;
+}
+
+function setStringFlag(result: ParsedArgs, field: "proxy" | "lang", flag: string, value: string | undefined): void {
+  if (!value || value.startsWith("--")) {
+    process.stderr.write(`${flag} requires a value\n`);
+    process.exit(1);
+  }
+  result[field] = value;
+}
+
 export function parseArgs(argv: string[]): ParsedArgs {
   if (argv.length === 0 || argv.includes("--help")) {
     process.stdout.write(USAGE);
@@ -71,50 +90,22 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
   const result: ParsedArgs = { subcommand: subcommand as Subcommand, url };
 
+  const FLAGS: Record<string, (flag: string, value: string | undefined) => void> = {
+    "--max-length": (flag, value) => setIntFlag(result, "maxLength", flag, value),
+    "--start-index": (flag, value) => setIntFlag(result, "startIndex", flag, value),
+    "--proxy": (flag, value) => setStringFlag(result, "proxy", flag, value),
+    "--lang": (flag, value) => setStringFlag(result, "lang", flag, value),
+  };
+
   for (let i = 2; i < argv.length; i++) {
     const flag = argv[i];
-    const value = argv[i + 1];
-    switch (flag) {
-      case "--max-length": {
-        const parsed = parseInt(value, 10);
-        if (isNaN(parsed) || parsed < 0) {
-          process.stderr.write(`${flag} requires a non-negative integer\n`);
-          process.exit(1);
-        }
-        result.maxLength = parsed;
-        i++;
-        break;
-      }
-      case "--start-index": {
-        const parsed = parseInt(value, 10);
-        if (isNaN(parsed) || parsed < 0) {
-          process.stderr.write(`${flag} requires a non-negative integer\n`);
-          process.exit(1);
-        }
-        result.startIndex = parsed;
-        i++;
-        break;
-      }
-      case "--proxy":
-        if (!value || value.startsWith("--")) {
-          process.stderr.write(`${flag} requires a value\n`);
-          process.exit(1);
-        }
-        result.proxy = value;
-        i++;
-        break;
-      case "--lang":
-        if (!value || value.startsWith("--")) {
-          process.stderr.write(`${flag} requires a value\n`);
-          process.exit(1);
-        }
-        result.lang = value;
-        i++;
-        break;
-      default:
-        process.stderr.write(`Unknown flag: ${flag}\n`);
-        process.exit(1);
+    const handler = FLAGS[flag];
+    if (!handler) {
+      process.stderr.write(`Unknown flag: ${flag}\n`);
+      process.exit(1);
     }
+    handler(flag, argv[i + 1]);
+    i++;
   }
 
   return result;
