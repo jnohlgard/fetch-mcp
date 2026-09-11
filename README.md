@@ -2,7 +2,7 @@
 
 ![fetch mcp logo](logo.jpg)
 
-[![npm version](https://img.shields.io/npm/v/mcp-fetch-server.svg)](https://www.npmjs.com/package/mcp-fetch-server)
+[![npm version](https://img.shields.io/npm/v/%40jnohlgard%2Ffetch-mcp.svg)](https://www.npmjs.com/package/@jnohlgard/fetch-mcp)
 
 An MCP server for fetching web content in multiple formats — HTML, JSON, plain text, Markdown, readable article content, and YouTube transcripts.
 
@@ -47,7 +47,7 @@ Add to your MCP client configuration:
   "mcpServers": {
     "fetch": {
       "command": "npx",
-      "args": ["mcp-fetch-server"]
+      "args": ["--package=@jnohlgard/fetch-mcp", "mcp-fetch-server"]
     }
   }
 }
@@ -56,13 +56,13 @@ Add to your MCP client configuration:
 ### As a CLI
 
 ```bash
-npx mcp-fetch <command> <url> [flags]
+npx --package @jnohlgard/fetch-mcp mcp-fetch <command> <url> [flags]
 ```
 
 Or install globally:
 
 ```bash
-npm install -g mcp-fetch-server
+npm install -g @jnohlgard/fetch-mcp
 mcp-fetch <command> <url> [flags]
 ```
 
@@ -132,7 +132,7 @@ Example with a custom limit:
   "mcpServers": {
     "fetch": {
       "command": "npx",
-      "args": ["mcp-fetch-server"],
+      "args": ["--package=@jnohlgard/fetch-mcp", "mcp-fetch-server"],
       "env": {
         "DEFAULT_LIMIT": "50000"
       }
