@@ -11,11 +11,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/zcaceres/fetch-mcp.git"
+    "url": "https://github.com/jnohlgard/fetch-mcp.git"
   },
-  "homepage": "https://github.com/zcaceres/fetch-mcp#readme",
+  "homepage": "https://github.com/jnohlgard/fetch-mcp#readme",
   "bugs": {
-    "url": "https://github.com/zcaceres/fetch-mcp/issues"
+    "url": "https://github.com/jnohlgard/fetch-mcp/issues"
   },
   "files": [
     "dist",
