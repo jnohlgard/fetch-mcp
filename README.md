@@ -47,7 +47,7 @@ Add to your MCP client configuration:
   "mcpServers": {
     "fetch": {
       "command": "npx",
-      "args": ["--package=@jnohlgard/fetch-mcp", "mcp-fetch-server"]
+      "args": ["@jnohlgard/fetch-mcp"]
     }
   }
 }
@@ -56,7 +56,7 @@ Add to your MCP client configuration:
 ### As a CLI
 
 ```bash
-npx --package @jnohlgard/fetch-mcp mcp-fetch <command> <url> [flags]
+npx -p @jnohlgard/fetch-mcp mcp-fetch <command> <url> [flags]
 ```
 
 Or install globally:
@@ -132,7 +132,7 @@ Example with a custom limit:
   "mcpServers": {
     "fetch": {
       "command": "npx",
-      "args": ["--package=@jnohlgard/fetch-mcp", "mcp-fetch-server"],
+      "args": ["@jnohlgard/fetch-mcp"],
       "env": {
         "DEFAULT_LIMIT": "50000"
       }
