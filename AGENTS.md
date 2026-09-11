@@ -8,7 +8,8 @@ MCP server + CLI in TypeScript (Bun dev, Node 20+ runtime) for fetching web cont
 bun install   # ALWAYS first on a fresh checkout (bun.lock is committed, so installs are reproducible)
 bun test      # bun:test, 7 files in src/, 157 tests
 bun run typecheck # tsc --noEmit over non-test source (test files are excluded in tsconfig)
-bun run build # bundles to dist/ (all three commands also run in GitHub Actions CI)
+bun run lint      # ESLint flat config with typescript-eslint (test files get relaxed any/empty-catch rules)
+bun run build     # bundles to dist/ (all four commands also run in GitHub Actions CI)
 ```
 
 ## Rules that trip up agents
