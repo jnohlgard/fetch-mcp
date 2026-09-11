@@ -4,6 +4,7 @@ import { Server, type ListToolsResult } from "@modelcontextprotocol/server";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { RequestPayloadSchema, ReadablePayloadSchema, YouTubeTranscriptPayloadSchema } from "./types.js";
 import { Fetcher } from "./Fetcher.js";
+import { parseArgs, run } from "./cli.js";
 import process from "process";
 import { downloadLimit } from "./types.js";
 import pkg from "../package.json" with { type: "json" };
@@ -264,13 +265,21 @@ function isMainModule(): boolean {
     const argPath = realpathSync(process.argv[1]);
     return scriptPath === argPath;
   } catch {
-    return process.argv[1]?.endsWith("/index.js") || process.argv[1]?.endsWith("/mcp-fetch-server") || false;
+    return process.argv[1]?.endsWith("/index.js") || process.argv[1]?.endsWith("/fetch-mcp") || false;
   }
 }
 
 if (isMainModule()) {
-  main().catch((error) => {
-    console.error("Fatal error in main():", error);
-    process.exit(1);
-  });
+  if (process.argv[2] === "serve") {
+    main().catch((error) => {
+      console.error("Fatal error in main():", error);
+      process.exit(1);
+    });
+  } else {
+    const args = parseArgs(process.argv.slice(2));
+    run(args).catch((err) => {
+      process.stderr.write(String(err?.message ?? err) + "\n");
+      process.exit(1);
+    });
+  }
 }

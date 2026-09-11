@@ -23,7 +23,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun build src/index.ts src/cli.ts --outdir dist --target node --external jsdom --external @mozilla/readability --external turndown",
+    "build": "bun build src/index.ts --outdir dist --target node --external jsdom --external @mozilla/readability --external turndown",
     "prepublishOnly": "bun run build",
     "dev": "bun run --watch src/index.ts",
     "start": "bun run src/index.ts",
@@ -32,8 +32,7 @@
     "publish:npm": "bun run build && bun test && npm publish"
   },
   "bin": {
-    "mcp-fetch-server": "dist/index.js",
-    "mcp-fetch": "dist/cli.js"
+    "fetch-mcp": "dist/index.js"
   },
   "engines": {
     "node": ">=20"

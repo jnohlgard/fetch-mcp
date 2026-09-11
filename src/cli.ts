@@ -1,14 +1,13 @@
-#!/usr/bin/env node
-
 import { Fetcher } from "./Fetcher.js";
 import type { RequestPayload } from "./types.js";
 import pkg from "../package.json" with { type: "json" };
 
-const USAGE = `mcp-fetch v${pkg.version}
+const USAGE = `fetch-mcp v${pkg.version}
 
-Usage: mcp-fetch <command> <url> [flags]
+Usage: fetch-mcp <command> <url> [flags]
 
 Commands:
+  serve     Start the MCP server over stdio
   html      Fetch a URL and return raw HTML
   markdown  Fetch a URL and return Markdown
   readable  Fetch a URL and return article content as Markdown (via Readability)
@@ -121,7 +120,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   return result;
 }
 
-async function run(args: ParsedArgs): Promise<void> {
+export async function run(args: ParsedArgs): Promise<void> {
   const fetchers: Record<string, (p: any) => Promise<any>> = {
     html: Fetcher.html.bind(Fetcher),
     markdown: Fetcher.markdown.bind(Fetcher),
@@ -146,25 +145,4 @@ async function run(args: ParsedArgs): Promise<void> {
   }
 
   process.stdout.write(text);
-}
-
-import { realpathSync } from "fs";
-import { fileURLToPath } from "url";
-
-function isMainModule(): boolean {
-  try {
-    const scriptPath = fileURLToPath(import.meta.url);
-    const argPath = realpathSync(process.argv[1]);
-    return scriptPath === argPath;
-  } catch {
-    return process.argv[1]?.endsWith("/cli.js") || process.argv[1]?.endsWith("/mcp-fetch") || false;
-  }
-}
-
-if (isMainModule()) {
-  const args = parseArgs(process.argv.slice(2));
-  run(args).catch((err) => {
-    process.stderr.write(String(err?.message ?? err) + "\n");
-    process.exit(1);
-  });
 }
