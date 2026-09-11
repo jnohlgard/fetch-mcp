@@ -70,7 +70,7 @@ describe("Fetcher — fixture tests", () => {
       expect(text).toContain("Item two");
       expect(text).toContain("Nested paragraph");
       // whitespace normalized — no runs of multiple spaces
-      expect(text).not.toMatch(/  /);
+      expect(text).not.toMatch(/ {2}/);
     });
 
     it("returns empty string for body-less HTML", async () => {

@@ -1,5 +1,19 @@
+interface CaptionTrack {
+  baseUrl: string;
+  languageCode: string;
+  name?: { simpleText?: string };
+}
+
+interface PlayerResponse {
+  captions?: {
+    playerCaptionsTracklistRenderer?: {
+      captionTracks?: CaptionTrack[];
+    };
+  };
+}
+
 export class YouTubeTranscript {
-  static extractPlayerResponse(html: string): unknown {
+  static extractPlayerResponse(html: string): PlayerResponse {
     const marker = /ytInitialPlayerResponse\s*=\s*\{/.exec(html)
     if (!marker) {
       throw new Error("Could not find ytInitialPlayerResponse in page HTML")
@@ -34,7 +48,7 @@ export class YouTubeTranscript {
     throw new Error("unbalanced braces in ytInitialPlayerResponse")
   }
 
-  static getCaptionTracks(playerResponse: any): any[] {
+  static getCaptionTracks(playerResponse: PlayerResponse): CaptionTrack[] {
     const tracks =
       playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
     if (!Array.isArray(tracks) || tracks.length === 0) {

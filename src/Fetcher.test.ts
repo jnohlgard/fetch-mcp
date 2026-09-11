@@ -6,7 +6,6 @@ import os from "node:os";
 import path from "node:path";
 import * as childProcess from "node:child_process";
 import { Fetcher, isPrivateIp } from "./Fetcher";
-import * as FetcherModule from "./Fetcher";
 import { YouTubeTranscriptPayloadSchema } from "./types";
 import { RateLimiter, createFetchRateLimiter } from "./RateLimiter";
 

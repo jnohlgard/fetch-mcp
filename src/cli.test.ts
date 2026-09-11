@@ -1,5 +1,5 @@
-import { describe, it, expect, jest, beforeEach, afterAll } from "bun:test";
-import { parseArgs, type ParsedArgs } from "./cli";
+import { describe, it, expect, afterAll } from "bun:test";
+import { parseArgs } from "./cli";
 
 // Save originals
 const originalExit = process.exit;
@@ -37,8 +37,6 @@ function restoreIO() {
 
 describe("parseArgs", () => {
   it("parses a basic subcommand and URL", () => {
-    // Temporarily override exit/write to prevent test from exiting
-    const orig = process.exit;
     const result = parseArgs(["html", "https://example.com"]);
     expect(result.subcommand).toBe("html");
     expect(result.url).toBe("https://example.com");

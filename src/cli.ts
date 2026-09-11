@@ -1,5 +1,5 @@
 import { Fetcher } from "./Fetcher.js";
-import type { RequestPayload } from "./types.js";
+import type { RequestPayload, TextToolResult } from "./types.js";
 import pkg from "../package.json" with { type: "json" };
 
 const USAGE = `fetch-mcp v${pkg.version}
@@ -121,7 +121,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 }
 
 export async function run(args: ParsedArgs): Promise<void> {
-  const fetchers: Record<string, (p: any) => Promise<any>> = {
+  const fetchers: Record<string, (p: RequestPayload) => Promise<TextToolResult>> = {
     html: Fetcher.html.bind(Fetcher),
     markdown: Fetcher.markdown.bind(Fetcher),
     readable: Fetcher.readable.bind(Fetcher),

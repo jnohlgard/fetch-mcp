@@ -207,12 +207,12 @@ export class Fetcher {
         }
       } catch (e: unknown) {
         if (e instanceof Error && (e.name === "AbortError" || e.name === "TimeoutError")) {
-          throw new Error(`Failed to fetch ${currentUrl}: timed out after ${hopTimeoutMs}ms`);
+          throw new Error(`Failed to fetch ${currentUrl}: timed out after ${hopTimeoutMs}ms`, { cause: e });
         }
         if (e instanceof Error) {
-          throw new Error(`Failed to fetch ${currentUrl}: ${e.message}`);
+          throw new Error(`Failed to fetch ${currentUrl}: ${e.message}`, { cause: e });
         }
-        throw new Error(`Failed to fetch ${currentUrl}: Unknown error`);
+        throw new Error(`Failed to fetch ${currentUrl}: Unknown error`, { cause: e });
       } finally {
         clearTimeout(timer);
       }
@@ -493,7 +493,7 @@ export class Fetcher {
 
     const lang = requestPayload.lang ?? "en";
     const track =
-      tracks.find((t: any) => t.languageCode === lang) ?? tracks[0];
+      tracks.find((t) => t.languageCode === lang) ?? tracks[0];
 
     const captionUrl = new URL(track.baseUrl);
     captionUrl.searchParams.set("fmt", "srv1");
