@@ -1,5 +1,5 @@
 {
-  "name": "mcp-fetch-server",
+  "name": "@jnohlgard/fetch-mcp",
   "version": "2.1.0",
   "description": "MCP server and CLI for fetching web content as HTML, Markdown, plain text, JSON, or YouTube transcripts",
   "type": "module",
