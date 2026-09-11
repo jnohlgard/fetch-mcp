@@ -1,0 +1,13 @@
+{
+  "options": {
+    "typeAware": true
+  },
+  "overrides": [
+    {
+      "files": ["**/*.test.ts"],
+      "rules": {
+        "typescript/unbound-method": "off"
+      }
+    }
+  ]
+}

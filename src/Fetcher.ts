@@ -322,7 +322,7 @@ export class Fetcher {
       result += decoder.decode();
       return result;
     } finally {
-      reader.cancel();
+      void reader.cancel();
     }
   }
 
