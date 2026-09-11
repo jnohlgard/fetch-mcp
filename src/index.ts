@@ -11,6 +11,31 @@ import pkg from "../package.json" with { type: "json" };
 import { realpathSync } from "fs";
 import { fileURLToPath } from "url";
 
+function urlProperty(description: string) {
+  return { type: "string" as const, description };
+}
+
+// Request options shared by every tool; each tool schema only differs in the
+// url description and any tool-specific extra properties.
+const commonRequestProperties = {
+  headers: {
+    type: "object" as const,
+    description: "Optional headers to include in the request",
+  },
+  max_length: {
+    type: "number" as const,
+    description: `Maximum number of characters to return (default: ${downloadLimit})`,
+  },
+  start_index: {
+    type: "number" as const,
+    description: "Start content from this character index (default: 0)",
+  },
+  proxy: {
+    type: "string" as const,
+    description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
+  },
+};
+
 export function createFetchServer(): Server {
   const server = new Server(
     {
@@ -34,26 +59,8 @@ export function createFetchServer(): Server {
           inputSchema: {
             type: "object",
             properties: {
-              url: {
-                type: "string",
-                description: "URL of the website to fetch",
-              },
-              headers: {
-                type: "object",
-                description: "Optional headers to include in the request",
-              },
-              max_length: {
-                type: "number",
-                description: `Maximum number of characters to return (default: ${downloadLimit})`,
-              },
-              start_index: {
-                type: "number",
-                description: "Start content from this character index (default: 0)",
-              },
-              proxy: {
-                type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
-              },
+              url: urlProperty("URL of the website to fetch"),
+              ...commonRequestProperties,
             },
             required: ["url"],
           },
@@ -64,26 +71,8 @@ export function createFetchServer(): Server {
           inputSchema: {
             type: "object",
             properties: {
-              url: {
-                type: "string",
-                description: "URL of the website to fetch",
-              },
-              headers: {
-                type: "object",
-                description: "Optional headers to include in the request",
-              },
-              max_length: {
-                type: "number",
-                description: `Maximum number of characters to return (default: ${downloadLimit})`,
-              },
-              start_index: {
-                type: "number",
-                description: "Start content from this character index (default: 0)",
-              },
-              proxy: {
-                type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
-              },
+              url: urlProperty("URL of the website to fetch"),
+              ...commonRequestProperties,
             },
             required: ["url"],
           },
@@ -95,26 +84,8 @@ export function createFetchServer(): Server {
           inputSchema: {
             type: "object",
             properties: {
-              url: {
-                type: "string",
-                description: "URL of the website to fetch",
-              },
-              headers: {
-                type: "object",
-                description: "Optional headers to include in the request",
-              },
-              max_length: {
-                type: "number",
-                description: `Maximum number of characters to return (default: ${downloadLimit})`,
-              },
-              start_index: {
-                type: "number",
-                description: "Start content from this character index (default: 0)",
-              },
-              proxy: {
-                type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
-              },
+              url: urlProperty("URL of the website to fetch"),
+              ...commonRequestProperties,
             },
             required: ["url"],
           },
@@ -125,26 +96,8 @@ export function createFetchServer(): Server {
           inputSchema: {
             type: "object",
             properties: {
-              url: {
-                type: "string",
-                description: "URL of the JSON to fetch",
-              },
-              headers: {
-                type: "object",
-                description: "Optional headers to include in the request",
-              },
-              max_length: {
-                type: "number",
-                description: `Maximum number of characters to return (default: ${downloadLimit})`,
-              },
-              start_index: {
-                type: "number",
-                description: "Start content from this character index (default: 0)",
-              },
-              proxy: {
-                type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
-              },
+              url: urlProperty("URL of the JSON to fetch"),
+              ...commonRequestProperties,
             },
             required: ["url"],
           },
@@ -156,26 +109,8 @@ export function createFetchServer(): Server {
           inputSchema: {
             type: "object",
             properties: {
-              url: {
-                type: "string",
-                description: "URL of the website to fetch",
-              },
-              headers: {
-                type: "object",
-                description: "Optional headers to include in the request",
-              },
-              max_length: {
-                type: "number",
-                description: `Maximum number of characters to return (default: ${downloadLimit})`,
-              },
-              start_index: {
-                type: "number",
-                description: "Start content from this character index (default: 0)",
-              },
-              proxy: {
-                type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
-              },
+              url: urlProperty("URL of the website to fetch"),
+              ...commonRequestProperties,
               fallback: {
                 type: "string",
                 enum: ["markdown", "txt", "none"],
@@ -192,26 +127,8 @@ export function createFetchServer(): Server {
           inputSchema: {
             type: "object",
             properties: {
-              url: {
-                type: "string",
-                description: "URL of the YouTube video",
-              },
-              headers: {
-                type: "object",
-                description: "Optional headers to include in the request",
-              },
-              max_length: {
-                type: "number",
-                description: `Maximum number of characters to return (default: ${downloadLimit})`,
-              },
-              start_index: {
-                type: "number",
-                description: "Start content from this character index (default: 0)",
-              },
-              proxy: {
-                type: "string",
-                description: "Optional proxy URL (e.g. 'http://proxy:8080'). Only honored when the server runs under Bun; silently ignored on Node.",
-              },
+              url: urlProperty("URL of the YouTube video"),
+              ...commonRequestProperties,
               lang: {
                 type: "string",
                 description: "Language code for captions (default: 'en')",
