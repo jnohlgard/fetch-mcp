@@ -92,6 +92,15 @@ function stripCredentialHeaders(headers: Record<string, string> | undefined): Re
   return result;
 }
 
+// Shared catch block for the public tool methods: errors never cross the API
+// boundary, they come back as an MCP error result with the original message.
+function toErrorResult(error: unknown): TextToolResult {
+  return {
+    content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+    isError: true,
+  };
+}
+
 export class Fetcher {
   // Process-wide cap on concurrent outbound fetches, so a burst of parallel
   // tool calls can't turn one process into a scraping burst. Tests can swap
@@ -124,6 +133,12 @@ export class Fetcher {
     return text.substring(startIndex, end);
   }
 
+  private static bareHostname(hostname: string): string {
+    return hostname.startsWith('[') && hostname.endsWith(']')
+      ? hostname.slice(1, -1)
+      : hostname;
+  }
+
   private static validateUrl(url: string): void {
     const parsedUrl = new URL(url);
     if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
@@ -131,10 +146,7 @@ export class Fetcher {
         `Fetcher blocked URL with disallowed protocol "${parsedUrl.protocol}". Only HTTP and HTTPS are allowed.`,
       );
     }
-    const hostname = parsedUrl.hostname;
-    const bareHostname = hostname.startsWith('[') && hostname.endsWith(']')
-      ? hostname.slice(1, -1)
-      : hostname;
+    const bareHostname = this.bareHostname(parsedUrl.hostname);
     if (bareHostname === 'localhost' || isPrivateIp(bareHostname)) {
       throw new Error(
         `Fetcher blocked request to private address "${bareHostname}". This prevents SSRF attacks where a local MCP server could access privileged internal services.`,
@@ -143,10 +155,7 @@ export class Fetcher {
   }
 
   private static async validateResolvedIp(url: string): Promise<void> {
-    const hostname = new URL(url).hostname;
-    const bareHostname = hostname.startsWith('[') && hostname.endsWith(']')
-      ? hostname.slice(1, -1)
-      : hostname;
+    const bareHostname = this.bareHostname(new URL(url).hostname);
     try {
       const { address } = await dns.promises.lookup(bareHostname);
       if (isPrivateIp(address)) {
@@ -340,10 +349,7 @@ export class Fetcher {
 
       return { content: [{ type: "text", text: html }], isError: false };
     } catch (error) {
-      return {
-        content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-        isError: true,
-      };
+      return toErrorResult(error);
     }
   }
 
@@ -378,10 +384,7 @@ export class Fetcher {
         isError: false,
       };
     } catch (error) {
-      return {
-        content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-        isError: true,
-      };
+      return toErrorResult(error);
     }
   }
 
@@ -436,10 +439,7 @@ export class Fetcher {
         isError: false,
       };
     } catch (error) {
-      return {
-        content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-        isError: true,
-      };
+      return toErrorResult(error);
     }
   }
 
@@ -569,10 +569,7 @@ export class Fetcher {
 
       return { content: [{ type: "text", text: transcript }], isError: false };
     } catch (error) {
-      return {
-        content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-        isError: true,
-      };
+      return toErrorResult(error);
     }
   }
 
@@ -616,10 +613,7 @@ export class Fetcher {
 
       return { content: [{ type: "text", text: content }], isError: false };
     } catch (error) {
-      return {
-        content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-        isError: true,
-      };
+      return toErrorResult(error);
     }
   }
 
@@ -639,10 +633,7 @@ export class Fetcher {
 
       return { content: [{ type: "text", text: markdown }], isError: false };
     } catch (error) {
-      return {
-        content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
-        isError: true,
-      };
+      return toErrorResult(error);
     }
   }
 }
