@@ -133,6 +133,11 @@ export class Fetcher {
     return text.substring(startIndex, end);
   }
 
+  // Shared payload limit defaults (max_length: 0/unset = unlimited, start_index: 0).
+  private static applyPayloadLimits(text: string, payload: RequestPayload): string {
+    return this.applyLengthLimits(text, payload.max_length ?? downloadLimit, payload.start_index ?? 0);
+  }
+
   private static bareHostname(hostname: string): string {
     return hostname.startsWith('[') && hostname.endsWith(']')
       ? hostname.slice(1, -1)
@@ -341,11 +346,7 @@ export class Fetcher {
       let html = await this.readResponseText(response);
       
       // Apply length limits
-      html = this.applyLengthLimits(
-        html, 
-        requestPayload.max_length ?? downloadLimit,
-        requestPayload.start_index ?? 0
-      );
+      html = this.applyPayloadLimits(html, requestPayload);
 
       return { content: [{ type: "text", text: html }], isError: false };
     } catch (error) {
@@ -373,11 +374,7 @@ export class Fetcher {
       let jsonString = text;
       
       // Apply length limits
-      jsonString = this.applyLengthLimits(
-        jsonString,
-        requestPayload.max_length ?? downloadLimit,
-        requestPayload.start_index ?? 0
-      );
+      jsonString = this.applyPayloadLimits(jsonString, requestPayload);
 
       return {
         content: [{ type: "text", text: jsonString }],
@@ -428,11 +425,7 @@ export class Fetcher {
       let normalizedText = await this.withParseDeadline(() => this.htmlToPlainText(html));
       
       // Apply length limits
-      normalizedText = this.applyLengthLimits(
-        normalizedText,
-        requestPayload.max_length ?? downloadLimit,
-        requestPayload.start_index ?? 0
-      );
+      normalizedText = this.applyPayloadLimits(normalizedText, requestPayload);
 
       return {
         content: [{ type: "text", text: normalizedText }],
@@ -561,11 +554,7 @@ export class Fetcher {
       const header = `[Transcript language: ${result.lang} — ${result.langName}]\n\n`;
       let transcript = header + lines.join("\n");
 
-      transcript = this.applyLengthLimits(
-        transcript,
-        requestPayload.max_length ?? downloadLimit,
-        requestPayload.start_index ?? 0,
-      );
+      transcript = this.applyPayloadLimits(transcript, requestPayload);
 
       return { content: [{ type: "text", text: transcript }], isError: false };
     } catch (error) {
@@ -605,11 +594,7 @@ export class Fetcher {
         this.parseReadable(html, requestPayload.url, requestPayload.fallback)
       );
 
-      content = this.applyLengthLimits(
-        content,
-        requestPayload.max_length ?? downloadLimit,
-        requestPayload.start_index ?? 0
-      );
+      content = this.applyPayloadLimits(content, requestPayload);
 
       return { content: [{ type: "text", text: content }], isError: false };
     } catch (error) {
@@ -625,11 +610,7 @@ export class Fetcher {
       let markdown = turndownService.turndown(html);
       
       // Apply length limits
-      markdown = this.applyLengthLimits(
-        markdown,
-        requestPayload.max_length ?? downloadLimit,
-        requestPayload.start_index ?? 0
-      );
+      markdown = this.applyPayloadLimits(markdown, requestPayload);
 
       return { content: [{ type: "text", text: markdown }], isError: false };
     } catch (error) {
