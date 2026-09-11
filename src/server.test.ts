@@ -40,7 +40,7 @@ describe("MCP server surface", () => {
 
   it("completes the initialize handshake and reports server info", () => {
     expect(client.getServerVersion()).toEqual({
-      name: "zcaceres/fetch",
+      name: "jnohlgard/fetch-mcp",
       version: pkg.version,
     });
   });

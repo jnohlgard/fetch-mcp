@@ -14,7 +14,7 @@ import { fileURLToPath } from "url";
 export function createFetchServer(): Server {
   const server = new Server(
     {
-      name: "zcaceres/fetch",
+      name: "jnohlgard/fetch-mcp",
       version: pkg.version,
     },
     {
