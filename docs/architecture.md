@@ -4,14 +4,14 @@
 src/types.ts              env config + zod arg schemas (single source of defaults)
 src/Fetcher.ts            ALL fetch/transform logic (static class; only state: hasYtDlp cache)
 src/YouTubeTranscript.ts  pure helpers: player-response extraction, caption XML parsing
-src/index.ts              MCP stdio server (SDK v2): createFetchServer() builds a low-level Server with tools/list + tools/call method handlers
-src/cli.ts                CLI: arg parsing + subcommand→Fetcher dispatch
+src/index.ts              single entry point: "serve" starts the MCP stdio server (SDK v2, createFetchServer()); any other subcommand dispatches to the CLI
+src/cli.ts                CLI implementation: arg parsing + subcommand→Fetcher dispatch (imported by index.ts)
 ```
 
-- Both entry points are thin dispatch layers over the same static `Fetcher` methods. Never duplicate fetch logic between `index.ts` and `cli.ts`.
+- Both halves of the entry point are thin dispatch layers over the same static `Fetcher` methods. Never duplicate fetch logic between `index.ts` and `cli.ts`.
 - Shared result contract: every public `Fetcher` method returns `{ content: [{ type: "text", text }], isError }` and **never throws**. `index.ts` passes this straight to the MCP transport; `cli.ts` routes `isError` to stderr + exit(1), success to stdout.
 - Naming split: MCP tools are snake_case with `fetch_` prefix (`fetch_html`); CLI subcommands are short (`html`); payload fields are snake_case (`max_length`); CLI flags are kebab-case (`--max-length`). The tool→method map is in `cli.ts` `run()`; zod schemas in `types.ts`.
-- `index.ts` and `cli.ts` are both import-safe for tests: the entrypoint only runs when `isMainModule()` passes (realpath comparison of `process.argv[1]`). Keep that guard; `createFetchServer` and `parseArgs` are exported for tests.
+- Only `index.ts` is an entry point, and it dispatches only when `isMainModule()` passes (realpath comparison of `process.argv[1]`), so importing it (e.g. from tests) is safe. `cli.ts` has no side effects on import. Keep that guard; `createFetchServer`, `parseArgs`, and `run` are exported for tests.
 
 ## Adding a new tool/subcommand
 

@@ -47,7 +47,7 @@ Add to your MCP client configuration:
   "mcpServers": {
     "fetch": {
       "command": "npx",
-      "args": ["@jnohlgard/fetch-mcp"]
+      "args": ["@jnohlgard/fetch-mcp", "serve"]
     }
   }
 }
@@ -56,26 +56,27 @@ Add to your MCP client configuration:
 ### As a CLI
 
 ```bash
-npx -p @jnohlgard/fetch-mcp mcp-fetch <command> <url> [flags]
+npx @jnohlgard/fetch-mcp <command> <url> [flags]
 ```
 
 Or install globally:
 
 ```bash
 npm install -g @jnohlgard/fetch-mcp
-mcp-fetch <command> <url> [flags]
+fetch-mcp <command> <url> [flags]
 ```
 
 ## CLI Usage
 
 ```
-mcp-fetch <command> <url> [flags]
+fetch-mcp <command> <url> [flags]
 ```
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
+| `serve` | Start the MCP server over stdio |
 | `html` | Fetch a URL and return raw HTML |
 | `markdown` | Fetch a URL and return Markdown |
 | `readable` | Fetch a URL and return article content as Markdown (via Readability) |
@@ -98,19 +99,19 @@ mcp-fetch <command> <url> [flags]
 
 ```bash
 # Fetch a page as markdown
-mcp-fetch markdown https://example.com
+fetch-mcp markdown https://example.com
 
 # Extract article content without boilerplate
-mcp-fetch readable https://example.com/blog/post
+fetch-mcp readable https://example.com/blog/post
 
 # Get a YouTube transcript in Spanish
-mcp-fetch youtube https://www.youtube.com/watch?v=dQw4w9WgXcQ --lang es
+fetch-mcp youtube https://www.youtube.com/watch?v=dQw4w9WgXcQ --lang es
 
 # Fetch with a length limit
-mcp-fetch html https://example.com --max-length 10000
+fetch-mcp html https://example.com --max-length 10000
 
 # Fetch through a proxy (Bun only — silently ignored when running on Node)
-mcp-fetch json https://api.example.com/data --proxy http://proxy:8080
+fetch-mcp json https://api.example.com/data --proxy http://proxy:8080
 ```
 
 ## Environment Variables
@@ -132,7 +133,7 @@ Example with a custom limit:
   "mcpServers": {
     "fetch": {
       "command": "npx",
-      "args": ["@jnohlgard/fetch-mcp"],
+      "args": ["@jnohlgard/fetch-mcp", "serve"],
       "env": {
         "DEFAULT_LIMIT": "50000"
       }
