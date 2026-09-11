@@ -1,5 +1,5 @@
 import { Fetcher } from "./Fetcher.js";
-import type { RequestPayload, TextToolResult } from "./types.js";
+import { isHttpProtocol, type RequestPayload, type TextToolResult } from "./types.js";
 import pkg from "../package.json" with { type: "json" };
 
 const USAGE = `fetch-mcp v${pkg.version}
@@ -79,7 +79,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
   }
   try {
     const parsed = new URL(url);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    if (!isHttpProtocol(parsed.protocol)) {
       process.stderr.write(`Invalid URL protocol "${parsed.protocol}". Only http: and https: are allowed.\n`);
       process.exit(1);
     }

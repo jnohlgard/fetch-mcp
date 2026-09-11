@@ -6,7 +6,7 @@ import dns from "node:dns";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { RequestPayload, ReadablePayload, YouTubeTranscriptPayload, TextToolResult, downloadLimit, maxResponseBytes } from "./types.js";
+import { RequestPayload, ReadablePayload, YouTubeTranscriptPayload, TextToolResult, downloadLimit, maxResponseBytes, isHttpProtocol } from "./types.js";
 import { YouTubeTranscript } from "./YouTubeTranscript.js";
 import { RateLimiter, createFetchRateLimiter } from "./RateLimiter.js";
 
@@ -146,7 +146,7 @@ export class Fetcher {
 
   private static validateUrl(url: string): void {
     const parsedUrl = new URL(url);
-    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    if (!isHttpProtocol(parsedUrl.protocol)) {
       throw new Error(
         `Fetcher blocked URL with disallowed protocol "${parsedUrl.protocol}". Only HTTP and HTTPS are allowed.`,
       );

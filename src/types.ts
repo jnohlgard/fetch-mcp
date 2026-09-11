@@ -6,6 +6,11 @@ export const downloadLimit = Number.isNaN(parsedLimit) ? 5000 : parsedLimit;
 const parsedMaxBytes = Number.parseInt(process.env.MAX_RESPONSE_BYTES ?? "10485760"); // 10MB
 export const maxResponseBytes = Number.isNaN(parsedMaxBytes) ? 10485760 : parsedMaxBytes;
 
+// Only plain web traffic is fetchable; anything else is an SSRF vector.
+export function isHttpProtocol(protocol: string): boolean {
+  return protocol === "http:" || protocol === "https:";
+}
+
 export const RequestPayloadSchema = z.object({
   url: z.string().url(),
   headers: z.record(z.string(), z.string()).optional(),
