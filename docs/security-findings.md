@@ -1,6 +1,6 @@
 # Security & Code-Quality Findings — fetch-mcp
 
-Audited 2026-09-10 against `src/` (v1.1.2). All findings were verified by execution, not static reading; reproduction notes are included. CLI subcommands share the exact same code paths as the MCP tools, so an affected tool implies the same CLI command is affected (`fetch_html` ≈ `mcp-fetch html`, etc.).
+Audited 2026-09-10 against `src/` (v1.1.2). All findings were verified by execution, not static reading; reproduction notes are included. CLI subcommands share the exact same code paths as the MCP tools, so an affected tool implies the same CLI command is affected (`fetch_html` ≈ `fetch-mcp html`, etc.).
 
 **Status: all 12 findings are resolved on branch `fix/security-findings`.** Fixes landed in the order 1, 2, 4, 8, 5, 7, 6, 10, 11, 9, 3 (one `fix:` commit each), and #12 is closed by a regression guard test. The commit that closed each finding is listed below and in the section headers.
 
