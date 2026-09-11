@@ -77,41 +77,36 @@ export class YouTubeTranscript {
     const lines: string[] = [];
 
     // Format 1: <text start="X" dur="Y">content</text>
-    const textRegex = /<text\b([^>]*)>([\s\S]*?)<\/text>/g;
     // Format 2: <p t="X" d="Y">content</p>
-    const pRegex = /<p\b([^>]*)>([\s\S]*?)<\/p>/g;
+    const formats = [
+      {
+        regex: /<text\b([^>]*)>([\s\S]*?)<\/text>/g,
+        attr: /\bstart="([^"]+)"/,
+        toSeconds: (raw: string) => parseFloat(raw),
+      },
+      {
+        regex: /<p\b([^>]*)>([\s\S]*?)<\/p>/g,
+        attr: /\bt="(\d+)"/,
+        toSeconds: (raw: string) => parseInt(raw, 10) / 1000,
+      },
+    ];
 
-    let match: RegExpExecArray | null;
-
-    match = textRegex.exec(xml);
-    if (match) {
-      // Reset and use format 1
-      textRegex.lastIndex = 0;
-      while ((match = textRegex.exec(xml)) !== null) {
-        const startAttr = match[1].match(/\bstart="([^"]+)"/);
-        if (!startAttr) {
+    for (const { regex, attr, toSeconds } of formats) {
+      let match: RegExpExecArray | null = regex.exec(xml);
+      if (!match) continue;
+      // Reset and iterate from the start of the document
+      regex.lastIndex = 0;
+      while ((match = regex.exec(xml)) !== null) {
+        const attrMatch = match[1].match(attr);
+        if (!attrMatch) {
           continue;
         }
-        const seconds = parseFloat(startAttr[1]);
         const content = this.decodeHtmlEntities(match[2].replace(/<[^>]+>/g, "").trim());
         if (content) {
-          lines.push(`[${this.formatTimestamp(seconds)}] ${content}`);
+          lines.push(`[${this.formatTimestamp(toSeconds(attrMatch[1]))}] ${content}`);
         }
       }
-    } else {
-      // Try format 2
-      while ((match = pRegex.exec(xml)) !== null) {
-        const tAttr = match[1].match(/\bt="(\d+)"/);
-        if (!tAttr) {
-          continue;
-        }
-        const ms = parseInt(tAttr[1], 10);
-        const seconds = ms / 1000;
-        const content = this.decodeHtmlEntities(match[2].replace(/<[^>]+>/g, "").trim());
-        if (content) {
-          lines.push(`[${this.formatTimestamp(seconds)}] ${content}`);
-        }
-      }
+      break;
     }
 
     return lines;
