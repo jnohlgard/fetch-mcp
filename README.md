@@ -8,10 +8,6 @@ An MCP server for fetching web content in multiple formats — HTML, JSON, plain
 
 > This repository is a fork of [zcaceres/fetch-mcp](https://github.com/zcaceres/fetch-mcp) by [Zach Caceres](https://zach.dev), with contributions from Piotr Wilkin, originally published on npm as `mcp-fetch-server`. It builds on that original work and republishes it under its own scope; the original project remains MIT-licensed and that license is retained here.
 
-<a href="https://glama.ai/mcp/servers/nu09wf23ao">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/nu09wf23ao/badge" alt="Fetch Server MCP server" />
-</a>
-
 ## Tools
 
 All tools accept the following common parameters:
